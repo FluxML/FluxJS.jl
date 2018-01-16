@@ -1,5 +1,5 @@
 module FluxJS
 
-# package code goes here
+include("trace.jl")
 
 end # module
