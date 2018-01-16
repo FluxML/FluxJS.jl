@@ -14,21 +14,28 @@ Base.show(io::IO, s::StagedArray) =
 
 graph(x::StagedArray) = x.graph
 graph(x) = DataFlow.constant(x)
-StagedArray{T,N}(f, args...) where {T,N} =
-  StagedArray{T,N}(IVertex{Any}(f, graph.(args)...))
+vcall(args...) = DataFlow.vertex(DataFlow.Call(), graph.(args)...)
+StagedArray{T,N}(f, args...) where {T,N} = StagedArray{T,N}(vcall(f, args...))
 
 @context Trace
 
-@primitive Trace (::typeof(*))(x::AbstractMatrix, y::AbstractVecOrMat) =
-  StagedArray{Real,ndims(y)}(*, x, y)
-
 stage(T::Type{<:AbstractArray}) = StagedArray{eltype(T),ndims(T)}
 stage(T::Type{<:Real}) = StagedArray{T,0}
+
+# Trace through broadcast calls
+@context BTrace
+@primitive Trace (::typeof(broadcast))(f, args...) = overdub(BTrace, f)(args...)
+
+bcast_ndims(args...) = maximum(arg isa AbstractArray ? ndims(arg) : 0 for arg in args)
+
+function bcastable(op)
+  @eval @primitive BTrace (::typeof($op))(args...) =
+    StagedArray{Real,bcast_ndims(args...)}(vcall(broadcast, $op, args...))
+end
+
+bcastable(op, ops...) = (bcastable(op); bcastable(ops...))
 
 function trace(f, Ts...)
   inputs = [stage(T)(DataFlow.inputnode(n)) for (n, T) in enumerate(Ts)]
   overdub(Trace, f)(inputs...)
 end
-
-# f(a, b) = a*b
-# trace(f, Array{Real,2}, Array{Real,1})
