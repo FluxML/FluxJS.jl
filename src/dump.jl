@@ -1,7 +1,11 @@
 function inline_blocks(ex)
-  MacroTools.postwalk(ex) do ex
+  ex = MacroTools.postwalk(ex) do ex
     @capture(ex, x_ = (body__; y_)) || return ex
     unblock(:($(body...); $x = $y))
+  end
+  ex = MacroTools.postwalk(ex) do ex
+    @capture(shortdef(ex), name_ = (args__,) -> body_) || return ex
+    :(function $name($(args...)) $body end)
   end
 end
 
