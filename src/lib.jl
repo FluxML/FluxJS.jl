@@ -1,7 +1,12 @@
 # Library of mathematical functions we consider primitive.
 
-@primitive Trace (::typeof(*))(x::AbstractMatrix, y::AbstractVecOrMat) =
-  StagedArray{Real,ndims(y)}(*, x, y)
+matVecMul(args...) = *(args...)
+
+@primitive Trace (::typeof(*))(x::AbstractMatrix, y::AbstractMatrix) =
+  StagedArray{Real,2}(*, x, y)
+
+@primitive Trace (::typeof(*))(x::AbstractMatrix, y::AbstractVector) =
+  StagedArray{Real,1}(matVecMul, x, y)
 
 bcastable(+, *)
 
