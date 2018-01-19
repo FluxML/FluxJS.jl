@@ -109,6 +109,8 @@ function jsexpr(io::IO, x; level = 0)
     jsexpr(io, x.args[1])
     print(io, " = ")
     jsexpr(io, x.args[2])
+  elseif isexpr(x, :.) && x.args[2] isa QuoteNode
+    print(io, x.args[1], ".", x.args[2].value)
   elseif isexpr(x, :call)
     call_expr(io, x.args...)
   elseif isexpr(x, :->) || isexpr(x, :function)
