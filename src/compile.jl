@@ -1,5 +1,4 @@
 using DataFlow
-using DataFlow: vcall
 
 struct Meth
   func
