@@ -35,8 +35,10 @@ preamble = quote
 end
 
 prepare(ex) = quote
-  $preamble
-  model = $(ex)
+  model = (function ()
+    $preamble
+    $(ex)
+  end)()
 end |> insert_returns |> valid_names |> inline_blocks |> MacroTools.flatten |> MacroTools.striplines
 
 compile(v::IVertex) = v |> lower |> DataFlow.syntax |> prepare |> jsexpr
@@ -63,7 +65,7 @@ function call_expr(io, f, args...)
   print(io, ")")
 end
 
-function func_expr(io, args, body, level = 0)
+function func_expr(io, args, body; level = 0)
   named = isexpr(args, :call)
   named || print(io, "(")
   print(io, "function ")
@@ -75,7 +77,7 @@ function func_expr(io, args, body, level = 0)
   isexpr(args, Symbol) ? print(io, args) : join(io, args.args, ",")
   println(io, ") {")
   jsexpr(io, block(body), level = level+1)
-  print(io, "}")
+  print(io, "  "^level, "}")
   named || print(io, ")")
 end
 
@@ -110,7 +112,7 @@ function jsexpr(io::IO, x; level = 0)
   elseif isexpr(x, :call)
     call_expr(io, x.args...)
   elseif isexpr(x, :->) || isexpr(x, :function)
-    func_expr(io, x.args...)
+    func_expr(io, x.args..., level = level)
   elseif isexpr(x, :if)
     if_expr(io, x.args, level = level)
   elseif isexpr(x, :return)
