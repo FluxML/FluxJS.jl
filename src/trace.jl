@@ -14,6 +14,7 @@ Base.show(io::IO, s::StagedArray) =
 
 graph(x::StagedArray) = x.graph
 graph(x) = DataFlow.constant(x)
+graph(x::Flux.TrackedArray) = graph(Flux.Tracker.value(x))
 vcall(args...) = DataFlow.vertex(DataFlow.Call(), graph.(args)...)
 StagedArray{T,N}(f, args...) where {T,N} = StagedArray{T,N}(vcall(f, args...))
 
@@ -35,7 +36,10 @@ end
 
 bcastable(op, ops...) = (bcastable(op); bcastable(ops...))
 
+lambda(v, args) = vertex(DataFlow.Lambda(args, v))
+
 function trace(f, Ts...)
   inputs = [stage(T)(DataFlow.inputnode(n)) for (n, T) in enumerate(Ts)]
-  overdub(Trace, f)(inputs...)
+  a = overdub(Trace, f)(inputs...)
+  lambda(graph(a), length(Ts))
 end

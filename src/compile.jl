@@ -15,11 +15,6 @@ jsarray(x) = vcall(jsarray_constructor(x), size(x), collect(reshape(x, :)))
 jscall(args...) = vcall(args...)
 
 jscall(::typeof(identity), x) = x
-jscall(::typeof(*), a, b) = jscall(:(math.matMul), a, b)
-jscall(::typeof(matVecMul), a, b) = jscall(:(math.matrixTimesVector), a, b)
-jscall(::typeof(broadcast), ::typeof(+), a, b) = jscall(:(math.add), a, b)
-jscall(::typeof(broadcast), ::typeof(σ), x) = jscall(:(math.sigmoid), x)
-jscall(::typeof(softmax), x) = jscall(:(math.softmax), x)
 
 cvalue(v) = DataFlow.isconstant(v) ? v.value.value : v
 
