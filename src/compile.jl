@@ -36,14 +36,9 @@ function lower(v)
   v = DataFlow.postwalk(v -> v.value isa DataFlow.OLambda ? DataFlow.λclose(v) : v, v)
 end
 
-# W = randn(5, 5)
-# b = randn(5)
-#
-# dense = Meth(:dense, (), @vtx x -> matVecMul(W, x) .+ b)
-#
-# model = DataFlow.@vtx function (x)
-#   l1 = σ.(dense(x))
-#   softmax(dense(l1))
-# end
-#
-# compile(model) |> print
+macro code_js(ex)
+  @capture(ex, f_(args__)) || error("@code_js f(args...)")
+  quote
+    Text(compile(trace($(esc(f)), $(map(arg -> :(stage($(esc(arg)))), args)...))))
+  end
+end

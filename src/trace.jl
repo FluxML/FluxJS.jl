@@ -22,6 +22,8 @@ Cassette.@context Trace
 
 stage(T::Type{<:AbstractArray}) = StagedArray{eltype(T),ndims(T)}
 stage(T::Type{<:Real}) = StagedArray{T,0}
+stage(T::Type) = error("Unsupported type $T")
+stage(x) = stage(typeof(x))
 
 # Avoid stack overflow
 @primitive Trace (f::Core.Builtin)(args...) = f(args...)
