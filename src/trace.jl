@@ -23,9 +23,12 @@ Cassette.@context Trace
 stage(T::Type{<:AbstractArray}) = StagedArray{eltype(T),ndims(T)}
 stage(T::Type{<:Real}) = StagedArray{T,0}
 
+# Avoid stack overflow
 @primitive Trace (f::Core.Builtin)(args...) = f(args...)
 
 @primitive Trace function (f::Any)(args...)
+  # Avoid stack overflow
+  applicable(f, args...) || return f(args...)
   (all(x -> x isa Union{AbstractArray,Number}, args) &&
     any(x -> x isa StagedArray, args)) || return exec(f, args...)
   T, v = _trace(f, typeof.(args)...)
