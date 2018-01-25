@@ -105,7 +105,7 @@ function jsexpr(io::IO, x; level = 0)
       println(io, ";")
     end
   elseif isexpr(x, :(=))
-    print(io, "let ")
+    isexpr(x.args[1], Symbol) && print(io, "let ")
     jsexpr(io, x.args[1])
     print(io, " = ")
     jsexpr(io, x.args[2])

@@ -9,8 +9,8 @@ end
 matVecMul(args...) = *(args...)
 
 jsarray_constructor(x) = :(dl.$(Symbol("Array$(ndims(x))D")).new)
-jsarray(x::AbstractVector) = vcall(jsarray_constructor(x), collect(reshape(x, :)))
-jsarray(x) = vcall(jsarray_constructor(x), size(x), collect(reshape(x, :)))
+jsarray(x::AbstractVector) = vcall(jsarray_constructor(x), Flux.Tracker.data(x))
+jsarray(x) = vcall(jsarray_constructor(x), size(x), vec(Flux.Tracker.data(x)))
 
 jscall(args...) = vcall(args...)
 
@@ -29,11 +29,14 @@ function lower(v)
   v = DataFlow.prewalk(v -> DataFlow.islambda(v) ? DataFlow.λopen(v) : v, v)
   v = DataFlow.postwalk(v) do v
     v.value isa DataFlow.Line && return v[1]
-    cvalue(v) isa Array && return jsarray(cvalue(v))
+    cvalue(v) isa AbstractArray && return jsarray(cvalue(v))
     DataFlow.iscall(v) || return v
     jscall(cvalue.(v[:])...)
   end
   v = DataFlow.postwalk(v -> v.value isa DataFlow.OLambda ? DataFlow.λclose(v) : v, v)
+  DataFlow.prewalkλ(v) do v
+    DataFlow.iscall(v, control) ? v[2] : v
+  end
 end
 
 macro code_js(ex)

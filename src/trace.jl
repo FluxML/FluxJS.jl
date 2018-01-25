@@ -2,6 +2,12 @@ using Cassette
 using Cassette: @context, @primitive
 using DataFlow
 
+struct TraceCtx
+  states::Vector{Any}
+end
+
+TraceCtx() = TraceCtx([])
+
 struct StagedArray{T,N} <: AbstractArray{T,N}
   graph::IVertex{Any}
 end
@@ -14,7 +20,6 @@ Base.show(io::IO, s::StagedArray) =
 
 graph(x::StagedArray) = x.graph
 graph(x) = DataFlow.constant(x)
-graph(x::Flux.TrackedArray) = graph(Flux.Tracker.value(x))
 vcall(args...) = DataFlow.vertex(DataFlow.Call(), graph.(args)...)
 StagedArray{T,N}(f, args...) where {T,N} = StagedArray{T,N}(vcall(f, args...))
 
@@ -28,16 +33,28 @@ stage(x) = stage(typeof(x))
 # Avoid stack overflow
 @primitive Trace (f::Core.Builtin)(args...) = f(args...)
 
-@primitive Trace function (f::Any)(args...)
+@primitive Trace ctx function (f::Any)(args...)
   # Avoid stack overflow
   applicable(f, args...) || return f(args...)
   (all(x -> x isa Union{AbstractArray,Number}, args) &&
-    any(x -> x isa StagedArray, args)) || return exec(f, args...)
+    any(x -> x isa StagedArray, args)) || return exec(f, args..., meta = ctx)
   T, v = _trace(f, typeof.(args)...)
   T <: StagedArray ? T(v, args...) : v
 end
 
-# Trace through broadcast calls
+control(a::IVertex, b::IVertex = DataFlow.inputnode()) = vcall(control, a, b)
+
+@primitive Trace ctx function (f::Flux.Recur)(args...)
+  push!(ctx.states, f.init)
+  i = length(ctx.states)
+  vstate = control(DataFlow.constant(:state))
+  h, y = exec(f.cell, stage(f.init)(getindex, vstate, i), args...)
+  typeof(y)(
+    vertex(DataFlow.Do(),
+    vcall(setindex!, vstate, h, i),
+      graph(y)))
+end
+
 Cassette.@context BTrace
 @primitive Trace (::typeof(broadcast))(f, args...) = Cassette.overdub(BTrace, f)(args...)
 
@@ -52,7 +69,8 @@ bcastable(op, ops...) = (bcastable(op); bcastable(ops...))
 
 lambda(v, args) = vertex(DataFlow.Lambda(args, v))
 
-exec(f, args...) = Cassette.execute(Val(false), Cassette.overdub(Trace, f), args...)
+exec(f, args...; meta = TraceCtx()) =
+  Cassette.execute(Val(false), Cassette.overdub(Trace, f, metadata = meta), args...)
 
 function _trace(f, Ts...)
   inputs = [stage(T)(DataFlow.inputnode(n)) for (n, T) in enumerate(Ts)]
