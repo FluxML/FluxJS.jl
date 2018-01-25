@@ -2,6 +2,8 @@ module FluxJS
 
 using Flux, MacroTools
 
+export @code_js
+
 include("trace.jl")
 include("compile.jl")
 include("lib.jl")
