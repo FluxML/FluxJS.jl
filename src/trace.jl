@@ -23,12 +23,37 @@ graph(x) = DataFlow.constant(x)
 vcall(args...) = DataFlow.vertex(DataFlow.Call(), graph.(args)...)
 StagedArray{T,N}(f, args...) where {T,N} = StagedArray{T,N}(vcall(f, args...))
 
-Cassette.@context Trace
-
 stage(T::Type{<:AbstractArray}) = StagedArray{eltype(T),ndims(T)}
 stage(T::Type{<:Real}) = StagedArray{T,0}
 stage(T::Type) = error("Unsupported type $T")
 stage(x) = stage(typeof(x))
+
+Cassette.@context Trace
+
+trace(f, args...; meta = TraceCtx()) =
+  Cassette.execute(Val(false), Cassette.overdub(Trace, f, metadata = meta), args...)
+
+unwrap(x::StagedArray) = x.graph
+unwrap(xs::Tuple) = vcall(tuple, unwrap.(xs)...)
+
+stagedinputs(Ts...) = [stage(T)(DataFlow.inputnode(n)) for (n, T) in enumerate(Ts)]
+
+function _traceλ(f, args...)
+  out = trace(f, stagedinputs(args...)...)
+  v = unwrap(out)
+  out, vertex(DataFlow.Lambda(length(args), v))
+end
+
+traceλ(f, args...) = _traceλ(f, args...)[2]
+
+wrap(x::StagedArray, v) = typeof(x)(v)
+wrap(x::Tuple, v) = ntuple(n -> wrap(x[n], vertex(DataFlow.Split(n), v)), length(x))
+
+function tracecall(f, args...)
+  out, v = _traceλ(f, args...)
+  v = vcall(v, args...)
+  wrap(out, v)
+end
 
 # Avoid stack overflow
 @primitive Trace (f::Core.Builtin)(args...) = f(args...)
@@ -37,9 +62,8 @@ stage(x) = stage(typeof(x))
   # Avoid stack overflow
   applicable(f, args...) || return f(args...)
   (all(x -> x isa Union{AbstractArray,Number}, args) &&
-    any(x -> x isa StagedArray, args)) || return exec(f, args..., meta = ctx)
-  T, v = _trace(f, typeof.(args)...)
-  T <: StagedArray ? T(v, args...) : v
+    any(x -> x isa StagedArray, args)) || return trace(f, args..., meta = ctx)
+  tracecall(f, args...)
 end
 
 control(a::IVertex, b::IVertex = DataFlow.inputnode()) = vcall(control, a, b)
@@ -48,11 +72,11 @@ control(a::IVertex, b::IVertex = DataFlow.inputnode()) = vcall(control, a, b)
   push!(ctx.states, f.init)
   i = length(ctx.states)
   vstate = control(DataFlow.constant(:state))
-  h, y = exec(f.cell, stage(f.init)(getindex, vstate, i), args...)
-  typeof(y)(
+  h, y = trace(f.cell, stage(f.init)(getindex, vstate, i), args...)
+  typeof(y)( # TODO: wrap properly
     vertex(DataFlow.Do(),
-    vcall(setindex!, vstate, h, i),
-      graph(y)))
+      vcall(setindex!, vstate, unwrap(h), i),
+        graph(y)))
 end
 
 Cassette.@context BTrace
@@ -66,16 +90,3 @@ function bcastable(op)
 end
 
 bcastable(op, ops...) = (bcastable(op); bcastable(ops...))
-
-lambda(v, args) = vertex(DataFlow.Lambda(args, v))
-
-exec(f, args...; meta = TraceCtx()) =
-  Cassette.execute(Val(false), Cassette.overdub(Trace, f, metadata = meta), args...)
-
-function _trace(f, Ts...)
-  inputs = [stage(T)(DataFlow.inputnode(n)) for (n, T) in enumerate(Ts)]
-  a = exec(f, inputs...)
-  typeof(a), lambda(graph(a), length(Ts))
-end
-
-trace(f, Ts...) = _trace(f, Ts...)[2]

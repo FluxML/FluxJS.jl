@@ -42,6 +42,6 @@ end
 macro code_js(ex)
   @capture(ex, f_(args__)) || error("@code_js f(args...)")
   quote
-    Text(compile(trace($(esc(f)), $(map(arg -> :(stage($(esc(arg)))), args)...))))
+    Text(compile(traceλ($(esc(f)), $(map(arg -> :(stage($(esc(arg)))), args)...))))
   end
 end
