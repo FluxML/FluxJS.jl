@@ -39,6 +39,53 @@ function lower(v)
   end
 end
 
+# Julia Code Stuff
+
+function inline_blocks(ex)
+  ex = MacroTools.postwalk(ex) do ex
+    @capture(ex, x_ = (body__; y_)) || return ex
+    unblock(:($(body...); $x = $y))
+  end
+  ex = MacroTools.postwalk(ex) do ex
+    @capture(ex, name_ = (args__,) -> body_) || return ex
+    :(function $name($(args...)) $body end)
+  end
+end
+
+function valid_names(ex)
+  MacroTools.prewalk(ex) do x
+    x isa Symbol ? Symbol(replace(String(x), "#", "")) : x
+  end
+end
+
+function insert_return(ex)
+  isexpr(ex, :block) ? :($(ex.args[1:end-1]...);$(insert_return(ex.args[end]))) :
+  isexpr(ex, :if) ? Expr(:if, ex.args[1], map(x -> insert_return(x), ex.args[2:end])...) :
+  isexpr(ex, :return) ? ex :
+  :(return $ex)
+end
+
+function insert_returns(ex)
+  MacroTools.prewalk(ex) do x
+    isexpr(x, :->, :function) ?
+      Expr(x.head, x.args[1], insert_return(x.args[2])) :
+      x
+  end
+end
+
+preamble = quote
+  math = dl.ENV.math
+end
+
+prepare(ex) = quote
+  model = (() -> begin
+    $preamble
+    $(ex)
+  end)()
+end |> insert_returns |> valid_names |> inline_blocks |> MacroTools.flatten |> MacroTools.striplines
+
+compile(v::IVertex) = v |> lower |> DataFlow.syntax |> prepare |> jsexpr
+
 macro code_js(ex)
   @capture(ex, f_(args__)) || error("@code_js f(args...)")
   quote
