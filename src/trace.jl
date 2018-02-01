@@ -38,19 +38,19 @@ unwrap(xs::Tuple) = vcall(tuple, unwrap.(xs)...)
 
 stagedinputs(Ts...) = [stage(T)(DataFlow.inputnode(n)) for (n, T) in enumerate(Ts)]
 
-function _traceλ(f, args...)
-  out = trace(f, stagedinputs(args...)...)
+function _traceλ(f, args...; meta = TraceCtx())
+  out = trace(f, stagedinputs(args...)..., meta = meta)
   v = unwrap(out)
   out, vertex(DataFlow.Lambda(length(args), v))
 end
 
-traceλ(f, args...) = _traceλ(f, args...)[2]
+traceλ(f, args...; meta = TraceCtx()) = _traceλ(f, args..., meta = meta)[2]
 
 wrap(x::StagedArray, v) = typeof(x)(v)
 wrap(x::Tuple, v) = ntuple(n -> wrap(x[n], vertex(DataFlow.Split(n), v)), length(x))
 
-function tracecall(f, args...)
-  out, v = _traceλ(f, args...)
+function tracecall(f, args...; meta = TraceCtx())
+  out, v = _traceλ(f, args..., meta = meta)
   v = vcall(v, args...)
   wrap(out, v)
 end
