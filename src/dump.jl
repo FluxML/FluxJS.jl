@@ -27,7 +27,7 @@ function func_expr(io, args, body; level = 0)
     args = Expr(:tuple, args.args[2:end]...)
   end
   print(io, "(")
-  isexpr(args, Symbol) ? print(io, args) : join(io, args.args, ",")
+  isexpr(args, Symbol) ? print(io, args) : join(io, args.args, ", ")
   println(io, ") {")
   jsexpr(io, block(body), level = level+1)
   print(io, "  "^level, "}")
