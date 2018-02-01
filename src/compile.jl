@@ -41,6 +41,8 @@ end
 
 # Julia Code Stuff
 
+using MacroTools: alias_gensyms, flatten, striplines
+
 function inline_blocks(ex)
   ex = MacroTools.postwalk(ex) do ex
     @capture(ex, x_ = (body__; y_)) || return ex
@@ -49,12 +51,6 @@ function inline_blocks(ex)
   ex = MacroTools.postwalk(ex) do ex
     @capture(ex, name_ = (args__,) -> body_) || return ex
     :(function $name($(args...)) $body end)
-  end
-end
-
-function valid_names(ex)
-  MacroTools.prewalk(ex) do x
-    x isa Symbol ? Symbol(replace(String(x), "#", "")) : x
   end
 end
 
@@ -82,7 +78,7 @@ prepare(ex) = quote
     $preamble
     $(ex)
   end)()
-end |> insert_returns |> valid_names |> inline_blocks |> MacroTools.flatten |> MacroTools.striplines
+end |> insert_returns |> inline_blocks |> alias_gensyms |> flatten |> striplines
 
 compile(v::IVertex) = v |> lower |> DataFlow.syntax |> prepare |> jsexpr
 
