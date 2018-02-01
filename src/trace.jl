@@ -35,6 +35,7 @@ trace(f, args...; meta = TraceCtx()) =
 
 unwrap(x::StagedArray) = x.graph
 unwrap(xs::Tuple) = vcall(tuple, unwrap.(xs)...)
+unwrap(x::Union{Number,AbstractArray{<:Number}}) = DataFlow.constant(x)
 
 stagedinputs(Ts...) = [stage(T)(DataFlow.inputnode(n)) for (n, T) in enumerate(Ts)]
 
@@ -70,8 +71,8 @@ control(a::IVertex, b::IVertex = DataFlow.inputnode()) = vcall(control, a, b)
 
 @primitive Trace ctx function (f::Flux.Recur)(args...)
   push!(ctx.states, f.init)
-  i = length(ctx.states)
-  vstate = control(DataFlow.constant(:state))
+  i = length(ctx.states)-1
+  vstate = control(DataFlow.constant(:states))
   h, y = trace(f.cell, stage(f.init)(getindex, vstate, i), stagedinputs(args...)...)
   λ = vertex(DataFlow.Lambda(length(args),
                              vertex(DataFlow.Do(),

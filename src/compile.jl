@@ -49,7 +49,7 @@ function inline_blocks(ex)
     unblock(:($(body...); $x = $y))
   end
   ex = MacroTools.postwalk(ex) do ex
-    @capture(ex, name_ = (args__,) -> body_) || return ex
+    @capture(ex, name_Symbol = (args__,) -> body_) || return ex
     :(function $name($(args...)) $body end)
   end
 end
@@ -69,22 +69,37 @@ function insert_returns(ex)
   end
 end
 
-preamble = quote
-  math = dl.ENV.math
+function prepare(ex, states = nothing)
+  state_setup = states == nothing ? :(;) :
+    :(init = $states; states = init.slice())
+  reset_method = states == nothing ? :(;) :
+    :(model.reset = () -> (global states = init.slice(); return);)
+  quote
+    model = (() -> begin
+      math = dl.ENV.math
+      $(state_setup.args...)
+      model = $(ex)
+      $(reset_method.args...)
+      model
+    end)()
+  end |> insert_returns |> inline_blocks |> alias_gensyms |> flatten |> striplines
 end
 
-prepare(ex) = quote
-  model = (() -> begin
-    $preamble
-    $(ex)
-  end)()
-end |> insert_returns |> inline_blocks |> alias_gensyms |> flatten |> striplines
+function compile(v::IVertex, states = [])
+  statesv = states == [] ? nothing :
+    unwrap((states...,)) |> lower |> DataFlow.syntax
+  prepare(DataFlow.syntax(lower(v)), statesv) |> jsexpr
+end
 
-compile(v::IVertex) = v |> lower |> DataFlow.syntax |> prepare |> jsexpr
+function compile(f, args...)
+  ctx = TraceCtx()
+  v = traceλ(f, stage.(args)..., meta = ctx)
+  compile(v, ctx.states)
+end
 
 macro code_js(ex)
   @capture(ex, f_(args__)) || error("@code_js f(args...)")
   quote
-    Text(compile(traceλ($(esc(f)), $(map(arg -> :(stage($(esc(arg)))), args)...))))
+    Text(compile($(esc(f)), $(esc.(args)...)))
   end
 end
