@@ -72,11 +72,12 @@ control(a::IVertex, b::IVertex = DataFlow.inputnode()) = vcall(control, a, b)
   push!(ctx.states, f.init)
   i = length(ctx.states)
   vstate = control(DataFlow.constant(:state))
-  h, y = trace(f.cell, stage(f.init)(getindex, vstate, i), args...)
-  typeof(y)( # TODO: wrap properly
+  h, y = trace(f.cell, stage(f.init)(getindex, vstate, i), stagedinputs(args...)...)
+  λ = vertex(DataFlow.Lambda(length(args),
     vertex(DataFlow.Do(),
-      vcall(setindex!, vstate, unwrap(h), i),
-        graph(y)))
+         vcall(setindex!, vstate, unwrap(h), i),
+         graph(y))))
+  typeof(y)(vcall(λ, args...)) # TODO: wrap properly
 end
 
 Cassette.@context BTrace
