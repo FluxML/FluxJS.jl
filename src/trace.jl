@@ -74,9 +74,9 @@ control(a::IVertex, b::IVertex = DataFlow.inputnode()) = vcall(control, a, b)
   vstate = control(DataFlow.constant(:state))
   h, y = trace(f.cell, stage(f.init)(getindex, vstate, i), stagedinputs(args...)...)
   λ = vertex(DataFlow.Lambda(length(args),
-    vertex(DataFlow.Do(),
-         vcall(setindex!, vstate, unwrap(h), i),
-         graph(y))))
+                             vertex(DataFlow.Do(),
+                                    vcall(setindex!, vstate, unwrap(h), i),
+                                    graph(y))))
   typeof(y)(vcall(λ, args...)) # TODO: wrap properly
 end
 
