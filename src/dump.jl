@@ -4,7 +4,7 @@ function inline_blocks(ex)
     unblock(:($(body...); $x = $y))
   end
   ex = MacroTools.postwalk(ex) do ex
-    @capture(shortdef(ex), name_ = (args__,) -> body_) || return ex
+    @capture(ex, name_ = (args__,) -> body_) || return ex
     :(function $name($(args...)) $body end)
   end
 end
@@ -35,7 +35,7 @@ preamble = quote
 end
 
 prepare(ex) = quote
-  model = (function ()
+  model = (() -> begin
     $preamble
     $(ex)
   end)()
