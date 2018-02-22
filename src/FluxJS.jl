@@ -8,6 +8,6 @@ include("dump.jl")
 include("trace.jl")
 include("compile.jl")
 include("lib.jl")
-include("blob.jl")
+include("bson.jl")
 
 end # module
