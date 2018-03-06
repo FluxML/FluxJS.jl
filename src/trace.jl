@@ -1,12 +1,11 @@
-using Cassette
-using Cassette: @context, @primitive
+using Vinyl: @primitive, overdub
 using DataFlow
 
-struct TraceCtx
+struct Trace
   states::Vector{Any}
 end
 
-TraceCtx() = TraceCtx([])
+Trace() = Trace([])
 
 struct StagedArray{T,N} <: AbstractArray{T,N}
   graph::IVertex{Any}
@@ -28,10 +27,7 @@ stage(T::Type{<:Real}) = StagedArray{T,0}
 stage(T::Type) = error("Unsupported type $T")
 stage(x) = stage(typeof(x))
 
-Cassette.@context Trace
-
-trace(f, args...; meta = TraceCtx()) =
-  Cassette.execute(Val(false), Cassette.overdub(Trace, f, metadata = meta), args...)
+trace(f, args...; meta = Trace()) = overdub(meta, f, args...)
 
 unwrap(x::StagedArray) = x.graph
 unwrap(xs::Tuple) = vcall(tuple, unwrap.(xs)...)
@@ -39,37 +35,35 @@ unwrap(x::Union{Number,AbstractArray{<:Number}}) = DataFlow.constant(x)
 
 stagedinputs(Ts...) = [stage(T)(DataFlow.inputnode(n)) for (n, T) in enumerate(Ts)]
 
-function _traceλ(f, args...; meta = TraceCtx())
+function _traceλ(f, args...; meta = Trace())
   out = trace(f, stagedinputs(args...)..., meta = meta)
   v = unwrap(out)
   out, vertex(DataFlow.Lambda(length(args), v))
 end
 
-traceλ(f, args...; meta = TraceCtx()) = _traceλ(f, args..., meta = meta)[2]
+traceλ(f, args...; meta = Trace()) = _traceλ(f, args..., meta = meta)[2]
 
 wrap(x::StagedArray, v) = typeof(x)(v)
 wrap(x::Tuple, v) = ntuple(n -> wrap(x[n], vertex(DataFlow.Split(n), v)), length(x))
 
-function tracecall(f, args...; meta = TraceCtx())
+function tracecall(f, args...; meta = Trace())
   out, v = _traceλ(f, args..., meta = meta)
   v = vcall(v, args...)
   wrap(out, v)
 end
 
-# Avoid stack overflow
-@primitive Trace (f::Core.Builtin)(args...) = f(args...)
-
-@primitive Trace ctx function (f::Any)(args...)
-  # Avoid stack overflow
-  applicable(f, args...) || return f(args...)
-  (all(x -> x isa Union{AbstractArray,Number}, args) &&
-    any(x -> x isa StagedArray, args)) || return trace(f, args..., meta = ctx)
-  tracecall(f, args...)
+@primitive ctx::Trace function (f::Any)(args...)
+  inline = !(all(x -> x isa Union{AbstractArray,Number}, args) &&
+             any(x -> x isa StagedArray, args))
+  inline ?
+    trace(f, args..., meta = ctx) :
+    tracecall(f, args..., meta = ctx)
 end
 
 control(a::IVertex, b::IVertex = DataFlow.inputnode()) = vcall(control, a, b)
 
-@primitive Trace ctx function (f::Flux.Recur)(args...)
+@primitive ctx::Trace function (f::Flux.Recur)(args...)
+  @show f
   push!(ctx.states, f.init)
   i = length(ctx.states)-1
   vstate = control(DataFlow.constant(:states))
@@ -81,8 +75,8 @@ control(a::IVertex, b::IVertex = DataFlow.inputnode()) = vcall(control, a, b)
   typeof(y)(vcall(λ, args...)) # TODO: wrap properly
 end
 
-Cassette.@context BTrace
-@primitive Trace (::typeof(broadcast))(f, args...) = Cassette.overdub(BTrace, f)(args...)
+struct BTrace end
+@primitive Trace (::typeof(broadcast))(f, args...) = overdub(BTrace(), () -> f(args...))
 
 bcast_ndims(args...) = maximum(arg isa AbstractArray ? ndims(arg) : 0 for arg in args)
 

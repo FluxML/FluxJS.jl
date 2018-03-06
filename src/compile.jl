@@ -6,8 +6,6 @@ struct Meth
   graph
 end
 
-matVecMul(args...) = *(args...)
-
 jsarray_constructor(x) = :(dl.$(Symbol("Array$(ndims(x))D")).new)
 jsarray(x::AbstractVector) = vcall(jsarray_constructor(x), Flux.Tracker.data(x))
 jsarray(x) = vcall(jsarray_constructor(x), size(x), vec(Flux.Tracker.data(x)))
@@ -92,7 +90,7 @@ function compile(v::IVertex, states = [])
 end
 
 function compile(f, args...)
-  ctx = TraceCtx()
+  ctx = Trace()
   v = traceλ(f, stage.(args)..., meta = ctx)
   compile(v, ctx.states)
 end
