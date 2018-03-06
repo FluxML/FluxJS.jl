@@ -63,7 +63,6 @@ end
 control(a::IVertex, b::IVertex = DataFlow.inputnode()) = vcall(control, a, b)
 
 @primitive ctx::Trace function (f::Flux.Recur)(args...)
-  @show f
   push!(ctx.states, f.init)
   i = length(ctx.states)-1
   vstate = control(DataFlow.constant(:states))

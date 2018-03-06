@@ -36,8 +36,9 @@ jscall(::typeof(softmax), x) = jscall(:(math.softmax), x)
 
 # broadcasted ops
 
-bcastable(+, *, tanh)
+bcastable(+, *, tanh, relu)
 
 jscall(::typeof(broadcast), ::typeof(+), a, b) = jscall(:(math.add), a, b)
 jscall(::typeof(broadcast), ::typeof(σ), x) = jscall(:(math.sigmoid), x)
 jscall(::typeof(broadcast), ::typeof(tanh), x) = jscall(:(math.tanh), x)
+jscall(::typeof(broadcast), ::typeof(relu), x) = jscall(:(math.relu), x)
