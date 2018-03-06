@@ -88,5 +88,6 @@ function jsexpr(io::IO, x; level = 0)
 end
 
 jsexpr(io::IO, x::Tuple; level = 0) = jsexpr(io, [x...], level = level)
+jsexpr(io::IO, x::AbstractString; level = 0) = show(io, x)
 
 jsexpr(x) = sprint(jsexpr, x)

@@ -6,10 +6,6 @@ struct Meth
   graph
 end
 
-jsarray_constructor(x) = :(dl.$(Symbol("Array$(ndims(x))D")).new)
-jsarray(x::AbstractVector) = vcall(jsarray_constructor(x), Flux.Tracker.data(x))
-jsarray(x) = vcall(jsarray_constructor(x), size(x), vec(Flux.Tracker.data(x)))
-
 jscall(args...) = vcall(args...)
 
 jscall(::typeof(identity), x) = x
@@ -27,7 +23,6 @@ function lower(v)
   v = DataFlow.prewalk(v -> DataFlow.islambda(v) ? DataFlow.λopen(v) : v, v)
   v = DataFlow.postwalk(v) do v
     v.value isa DataFlow.Line && return v[1]
-    cvalue(v) isa AbstractArray && return jsarray(cvalue(v))
     DataFlow.iscall(v) || return v
     jscall(cvalue.(v[:])...)
   end
@@ -35,6 +30,16 @@ function lower(v)
   DataFlow.prewalkλ(v) do v
     DataFlow.iscall(v, control) ? v[2] : v
   end
+end
+
+function liftweights(v)
+  weights = []
+  v = DataFlow.prewalkλ(v) do x
+    cvalue(x) isa AbstractArray || return x
+    push!(weights, Float32.(Tracker.data(cvalue(x))))
+    DataFlow.constant(:(model.weights[$(length(weights)-1)]))
+  end
+  v, weights
 end
 
 # Julia Code Stuff
@@ -67,7 +72,7 @@ function insert_returns(ex)
   end
 end
 
-function prepare(ex, states = nothing)
+function prepare(ex, name, states = nothing)
   state_setup = states == nothing ? :(;) :
     :(init = $states; states = init.slice())
   reset_method = states == nothing ? :(;) :
@@ -78,26 +83,36 @@ function prepare(ex, states = nothing)
       $(state_setup.args...)
       model = $(ex)
       $(reset_method.args...)
+      model.weights = []
       model
     end)()
+    flux.fetchWeights($"$name.bson").then(ws -> model.weights = ws)
   end |> insert_returns |> inline_blocks |> alias_gensyms |> flatten |> striplines
 end
 
-function compile(v::IVertex, states = [])
+function compile(v::IVertex, name, states = [])
   statesv = states == [] ? nothing :
     unwrap((states...,)) |> lower |> DataFlow.syntax
-  prepare(DataFlow.syntax(lower(v)), statesv) |> jsexpr
+  v, weights = liftweights(lower(v))
+  jsexpr(prepare(DataFlow.syntax(v), name, statesv)), weights
 end
 
-function compile(f, args...)
+function compile(f, args...; name = "model")
   ctx = Trace()
   v = traceλ(f, stage.(args)..., meta = ctx)
-  compile(v, ctx.states)
+  compile(v, name, ctx.states)
+end
+
+function compile(name::AbstractString, f, args...)
+  code, weights = compile(f, args..., name = name)
+  open(io -> write(io, code), "$name.js", "w")
+  BSON.@save "$name.bson" weights
+  return
 end
 
 macro code_js(ex)
   @capture(ex, f_(args__)) || error("@code_js f(args...)")
   quote
-    Text(compile($(esc(f)), $(esc.(args)...)))
+    Text(compile($(esc(f)), $(esc.(args)...))[1])
   end
 end
