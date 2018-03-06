@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/FluxML/FluxJS.jl.svg?branch=master)](https://travis-ci.org/FluxML/FluxJS.jl)
+
 # Flux.JS
 
 Run [Flux](https://fluxml.github.io/) models in the browser, via
