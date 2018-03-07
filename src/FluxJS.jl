@@ -1,6 +1,6 @@
 module FluxJS
 
-using Flux, MacroTools, BSON
+using Flux, Flux.Tracker, MacroTools, BSON
 
 export @code_js
 
