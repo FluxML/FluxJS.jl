@@ -5,6 +5,8 @@
 Run [Flux](https://fluxml.github.io/) models in the browser, via
 [deeplearn.js](https://deeplearnjs.org/).
 
+Note that if you get errors running this package, you may need to run `Pkg.checkout("ASTInterpreter2")`.
+
 ## JS Output
 
 You can see what Flux.JS sees with `@code_js`, which works like `@code_typed` or
