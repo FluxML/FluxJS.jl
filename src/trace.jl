@@ -30,7 +30,7 @@ function StagedArray(f, args...)
   StagedArray{eltype(sh),ndims(sh)}(vcall(f, args...),sh.dims)
 end
 
-stage(x::AbstractArray, v) = StagedArray{eltype(x),ndims(x)}(v, size(x))
+stage(x::AbstractArray{T,N}, v) where {T,N} = StagedArray{T,N}(v, size(x))
 stage(x::Real, v) = StagedArray{typeof(x),0}(v, ())
 stage(x, v) = error("Unsupported type $(typeof(x))")
 
@@ -50,7 +50,7 @@ end
 
 traceλ(f, args...; meta = Trace()) = _traceλ(f, args..., meta = meta)[2]
 
-wrap(x::StagedArray, v) = typeof(x)(v)
+wrap(x::StagedArray, v) = stage(x, v)
 wrap(x::Tuple, v) = ntuple(n -> wrap(x[n], vertex(DataFlow.Split(n), v)), length(x))
 
 function tracecall(f, args...; meta = Trace())
@@ -72,13 +72,14 @@ control(a::IVertex, b::IVertex = DataFlow.inputnode()) = vcall(control, a, b)
 @primitive ctx::Trace function (f::Flux.Recur)(args...)
   push!(ctx.states, f.init)
   i = length(ctx.states)-1
-  vstate = control(DataFlow.constant(:states))
-  h, y = trace(f.cell, stage(f.init)(getindex, vstate, i), stagedinputs(args...)...)
+  states = control(DataFlow.constant(:states))
+  state = stage(f.init, vcall(getindex, states, i))
+  h, y = trace(f.cell, state, stagedinputs(args...)...)
   λ = vertex(DataFlow.Lambda(length(args),
                              vertex(DataFlow.Do(),
-                                    vcall(setindex!, vstate, unwrap(h), i),
+                                    vcall(setindex!, states, unwrap(h), i),
                                     graph(y))))
-  typeof(y)(vcall(λ, args...)) # TODO: wrap properly
+  wrap(y, vcall(λ, args...))
 end
 
 struct BTrace end

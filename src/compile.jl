@@ -99,7 +99,7 @@ end
 
 function compile(f, args...; name = "model")
   ctx = Trace()
-  v = traceλ(f, stage.(args)..., meta = ctx)
+  v = traceλ(f, args..., meta = ctx)
   compile(v, name, ctx.states)
 end
 
