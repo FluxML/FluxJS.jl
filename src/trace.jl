@@ -1,5 +1,6 @@
 using Vinyl: @primitive, overdub
 using DataFlow
+import Flux.JIT: shape
 
 struct Trace
   states::Vector{Any}
@@ -9,23 +10,29 @@ Trace() = Trace([])
 
 struct StagedArray{T,N} <: AbstractArray{T,N}
   graph::IVertex{Any}
+  dims::NTuple{N,Int}
 end
 
+Base.size(x::StagedArray) = x.dims
+
 Base.show(io::IO, ::MIME"text/plain", s::StagedArray) =
-  print(io, "StagedArray{$(eltype(s)),$(ndims(s))}($(s.graph))")
+  print(io, "StagedArray{$(eltype(s))}($(s.dims), $(s.graph))")
 
 Base.show(io::IO, s::StagedArray) =
-  print(io, "StagedArray{$(eltype(s)),$(ndims(s))}()")
+  print(io, "StagedArray{$(eltype(s))}($(s.dims))")
 
 graph(x::StagedArray) = x.graph
 graph(x) = DataFlow.constant(x)
 vcall(args...) = DataFlow.vertex(DataFlow.Call(), graph.(args)...)
-StagedArray{T,N}(f, args...) where {T,N} = StagedArray{T,N}(vcall(f, args...))
 
-stage(T::Type{<:AbstractArray}) = StagedArray{eltype(T),ndims(T)}
-stage(T::Type{<:Real}) = StagedArray{T,0}
-stage(T::Type) = error("Unsupported type $T")
-stage(x) = stage(typeof(x))
+function StagedArray(f, args...)
+  sh = shape(f, shape.(args)...)
+  StagedArray{eltype(sh),ndims(sh)}(vcall(f, args...),sh.dims)
+end
+
+stage(x::AbstractArray, v) = StagedArray{eltype(x),ndims(x)}(v, size(x))
+stage(x::Real, v) = StagedArray{typeof(x),0}(v, ())
+stage(x, v) = error("Unsupported type $(typeof(x))")
 
 trace(f, args...; meta = Trace()) = overdub(meta, f, args...)
 
@@ -33,7 +40,7 @@ unwrap(x::StagedArray) = x.graph
 unwrap(xs::Tuple) = vcall(tuple, unwrap.(xs)...)
 unwrap(x::Union{Number,AbstractArray{<:Number}}) = DataFlow.constant(x)
 
-stagedinputs(Ts...) = [stage(T)(DataFlow.inputnode(n)) for (n, T) in enumerate(Ts)]
+stagedinputs(xs...) = [stage(x, DataFlow.inputnode(n)) for (n, x) in enumerate(xs)]
 
 function _traceλ(f, args...; meta = Trace())
   out = trace(f, stagedinputs(args...)..., meta = meta)
@@ -80,8 +87,7 @@ struct BTrace end
 bcast_ndims(args...) = maximum(arg isa AbstractArray ? ndims(arg) : 0 for arg in args)
 
 function bcastable(op)
-  @eval @primitive BTrace (::typeof($op))(args...) =
-    StagedArray{Real,bcast_ndims(args...)}(vcall(broadcast, $op, args...))
+  @eval @primitive BTrace (::typeof($op))(args...) = StagedArray(broadcast, $op, args...)
 end
 
 bcastable(op, ops...) = (bcastable(op); bcastable(ops...))

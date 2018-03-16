@@ -5,13 +5,15 @@
 
 matVecMul(args...) = *(args...)
 
+shape(::typeof(matVecMul), args...) = shape(*, args...)
+
 @primitive Trace (::typeof(*))(x::AbstractMatrix, y::AbstractMatrix) =
-  StagedArray{Real,2}(*, x, y)
+  StagedArray(*, x, y)
 
 jscall(::typeof(*), a, b) = jscall(:(math.matMul), a, b)
 
 @primitive Trace (::typeof(*))(x::AbstractMatrix, y::AbstractVector) =
-  StagedArray{Real,1}(matVecMul, x, y)
+  StagedArray(matVecMul, x, y)
 
 jscall(::typeof(matVecMul), a, b) = jscall(:(math.matrixTimesVector), a, b)
 
@@ -20,7 +22,7 @@ jscall(::typeof(matVecMul), a, b) = jscall(:(math.matrixTimesVector), a, b)
 concat1D(a, b) = vcat(a, b)
 
 @primitive Trace (::typeof(vcat))(a::AbstractVector, b::AbstractVector) =
-  StagedArray{Real,1}(concat1D, a, b)
+  StagedArray(concat1D, a, b)
 
 @primitive Trace (::typeof(vcat))(a::AbstractMatrix, b::AbstractMatrix) =
   error("concat2D not implemented")
@@ -30,7 +32,7 @@ jscall(::typeof(concat1D), a, b) = jscall(:(math.concat1D), a, b)
 # softmax
 
 @primitive Trace (::typeof(softmax))(x::AbstractVecOrMat) =
-  StagedArray{eltype(x),ndims(x)}(softmax, x)
+  StagedArray(softmax, x)
 
 jscall(::typeof(softmax), x) = jscall(:(math.softmax), x)
 
