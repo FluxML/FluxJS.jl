@@ -38,9 +38,17 @@ jscall(::typeof(softmax), x) = jscall(:(math.softmax), x)
 
 # broadcasted ops
 
-bcastable(+, *, tanh, relu, σ)
+bcastable(+, *, /, ^, tanh, σ, relu, leakyrelu, abs, exp, log)
 
 jscall(::typeof(broadcast), ::typeof(+), a, b) = jscall(:(math.add), a, b)
-jscall(::typeof(broadcast), ::typeof(σ), x) = jscall(:(math.sigmoid), x)
+jscall(::typeof(broadcast), ::typeof(*), a, b) = jscall(:(math.mul), a, b)
+jscall(::typeof(broadcast), ::typeof(/), a, b) = jscall(:(math.div), a, b)
+jscall(::typeof(broadcast), ::typeof(^), a, b) = jscall(:(math.pow), a, b)
 jscall(::typeof(broadcast), ::typeof(tanh), x) = jscall(:(math.tanh), x)
+jscall(::typeof(broadcast), ::typeof(σ), x) = jscall(:(math.sigmoid), x)
 jscall(::typeof(broadcast), ::typeof(relu), x) = jscall(:(math.relu), x)
+jscall(::typeof(broadcast), ::typeof(leakyrelu), x) = jscall(:(math.relu), x, 0.01)
+jscall(::typeof(broadcast), ::typeof(leakyrelu), x, a) = jscall(:(math.relu), x, a)
+jscall(::typeof(broadcast), ::typeof(abs), x) = jscall(:(math.abs), x)
+jscall(::typeof(broadcast), ::typeof(exp), x) = jscall(:(math.exp), x)
+jscall(::typeof(broadcast), ::typeof(log), x) = jscall(:(math.log), x)
