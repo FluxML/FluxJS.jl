@@ -23,7 +23,7 @@ julia> x = rand(10)
 
 julia> @code_js identity(x)
 let model = (function () {
-  let math = tf.ENV.math;
+  let math = tf;
   function model(kinkajou) {
     return kinkajou;
   };
@@ -53,7 +53,7 @@ julia> f(W,x) = W*x
 
 julia> @code_js f(rand(5,10),rand(10))
 let model = (function () {
-  let math = tf.ENV.math;
+  let math = tf;
   function model(bear, giraffe) {
     return math.matrixTimesVector(bear, giraffe);
   };
@@ -73,7 +73,7 @@ julia> m = Chain(Dense(10,5,relu),Dense(5,2),softmax)
 
 julia> @code_js m(x)
 let model = (function () {
-  let math = tf.ENV.math;
+  let math = tf;
   function badger(eland) {
     return math.add(math.matrixTimesVector(model.weights[0], eland), model.weights[1]);
   };
@@ -99,7 +99,7 @@ julia> m = Chain(RNN(10,5))
 
 julia> @code_js m(x)
 let model = (function () {
-  let math = tf.ENV.math;
+  let math = tf;
   let init = [0.017732, 0.00991122, -0.00712077, -0.00161244, -0.00232475];
   let states = init.slice();
   function nightingale(seal, mongoose) {
@@ -156,7 +156,7 @@ directly. In real applications you'll most likely want to wait on the
 ```html
 <script>
 let model = (function () {
-  let math = tf.ENV.math;
+  let math = tf;
   function model(kinkajou) {
     return kinkajou;
   };
