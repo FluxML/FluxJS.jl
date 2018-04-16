@@ -1,5 +1,5 @@
 # Library of mathematical functions we consider primitive.
-# TODO: store Julia functions and types, to avoid deeplearn.js-specific functions
+# TODO: store Julia functions and types, to avoid tensorflow.js-specific functions
 
 # matmul
 
