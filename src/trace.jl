@@ -1,6 +1,5 @@
 using Vinyl: @primitive, overdub
 using DataFlow
-import Flux.JIT: shape
 
 struct Trace
   states::Vector{Any}
