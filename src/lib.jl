@@ -80,3 +80,9 @@ jscall(::typeof(broadcast), ::typeof(relu), x) = jscall(:(math.relu), x)
 
 shape(::typeof(reshape), x::Shape{T}, i...) where T =
   Shape{T}(Base._reshape_uncolon(x, i))
+
+shape(x) = x
+shape(x::Shape) = x
+shape(x::Tuple) = shape.(x)
+shape(x::AbstractArray) = Shape{eltype(x)}(size(x)...)
+shape(x::TrackedArray) = shape(x.data)
