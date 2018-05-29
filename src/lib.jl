@@ -1,3 +1,5 @@
+using NNlib: cdims, padtuple
+
 struct Shape{T,N}
   dims::NTuple{N,Int}
 end
@@ -15,6 +17,7 @@ Base.length(s::Shape) = prod(s.dims)
 Base.eltype(s::Shape{T}) where T = T
 
 Base.sizeof(s::Shape{T}) where T = sizeof(T)*prod(size(s))
+NNlib.padtuple(x::FluxJS.Shape, p) = padtuple(size(x), p)
 
 function Base.show(io::IO, s::Shape{T}) where T
   print(io, "Shape{$T}(")
@@ -65,6 +68,27 @@ jscall(::typeof(concat1D), a, b) = jscall(:(math.concat1D), a, b)
   StagedArray(softmax, x)
 
 jscall(::typeof(softmax), x) = jscall(:(math.softmax), x)
+
+shape(::typeof(softmax), x) = shape(x)
+
+# conv2d
+
+@primitive Trace function (c::Conv)(x)
+  pad = 0
+  !all(x-> x == c.pad[1], c.pad)?
+    throw(error("Assymetric padding is unsupported by deeplearn-js")):
+    pad = c.pad[1]
+
+  conv = StagedArray(conv2d, x, c.weight, padtuple(x,c.stride), pad)
+
+  σ, b = c.σ, reshape(c.bias, map(_->1, c.stride)..., :, 1)
+  overdub(Trace(), (x, σ, b) -> (σ).(x .+ b), conv, σ, b)
+end
+
+jscall(::typeof(conv2d), x...) = jscall(:(dl.conv2d), x...)
+
+shape(::typeof(conv2d), x, weight, stride, pad) =
+  Shape{Int64}(cdims(size(x), size(weight), padtuple(x, pad), stride))
 
 # broadcasted ops
 
