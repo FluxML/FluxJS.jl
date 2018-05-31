@@ -1,4 +1,4 @@
-using NNlib: cdims, padtuple
+using NNlib: cdims, padtuple, pdims
 
 struct Shape{T,N}
   dims::NTuple{N,Int}
@@ -89,6 +89,20 @@ jscall(::typeof(conv2d), x...) = jscall(:(dl.conv2d), x...)
 
 shape(::typeof(conv2d), x, weight, stride, pad) =
   Shape{Int64}(cdims(size(x), size(weight), padtuple(x, pad), stride))
+
+# maxpool
+
+@primitive Trace function maxpool(x::AbstractArray, k; pad = map(_->0,k), stride = k)
+  !all(x-> x == pad[1], pad)?
+    throw(error("Assymetric padding is unsupported by deeplearn-js")):
+    pad = pad[1]
+
+  StagedArray(maxpool, x, k, pad, stride)
+end
+
+jscall(::typeof(maxpool), x, k, pad, stride) = jscall(:(math.maxpool), x, k, stride, pad)
+
+shape(::typeof(maxpool), x, k, pad, stride) = Shape{Int64}(pdims(size(x), k, padtuple(x, pad), stride))
 
 # broadcasted ops
 
