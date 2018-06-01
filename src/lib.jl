@@ -85,10 +85,10 @@ shape(::typeof(softmax), x) = shape(x)
   overdub(Trace(), (x, σ, b) -> (σ).(x .+ b), conv, σ, b)
 end
 
-jscall(::typeof(conv2d), x...) = jscall(:(dl.conv2d), x...)
+jscall(::typeof(conv2d), x...) = jscall(:(tf.conv2d), x...)
 
-shape(::typeof(conv2d), x, weight, stride, pad) =
-  Shape{Int64}(cdims(size(x), size(weight), padtuple(x, pad), stride))
+shape(::typeof(conv2d), x::Shape{T}, weight, stride, pad) where T =
+  Shape{T}(cdims(size(x), size(weight), padtuple(x, pad), stride))
 
 # maxpool
 
@@ -102,7 +102,7 @@ end
 
 jscall(::typeof(maxpool), x, k, pad, stride) = jscall(:(math.maxpool), x, k, stride, pad)
 
-shape(::typeof(maxpool), x, k, pad, stride) = Shape{Int64}(pdims(size(x), k, padtuple(x, pad), stride))
+shape(::typeof(maxpool), x::Shape{T}, k, pad, stride) where T = Shape{T}(pdims(size(x), k, padtuple(x, pad), stride))
 
 # broadcasted ops
 
