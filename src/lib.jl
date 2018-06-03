@@ -100,7 +100,7 @@ shape(::typeof(conv2d), x::Shape{T}, weight, stride, pad) where T =
   StagedArray(maxpool, x, k, pad, stride)
 end
 
-jscall(::typeof(maxpool), x, k, pad, stride) = jscall(:(math.maxpool), x, k, stride, pad)
+jscall(::typeof(maxpool), x, k, pad, stride) = jscall(:(math.maxPool), x, k, stride, pad)
 
 shape(::typeof(maxpool), x::Shape{T}, k, pad, stride) where T = Shape{T}(pdims(size(x), k, padtuple(x, pad), stride))
 
