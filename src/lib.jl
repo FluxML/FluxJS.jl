@@ -81,14 +81,14 @@ shape(::typeof(softmax), x) = shape(x)
 
   conv = StagedArray(conv2d, x, c.weight, padtuple(x,c.stride), pad)
 
-  σ, b = c.σ, reshape(c.bias, map(_->1, c.stride)..., :, 1)
+  σ, b = c.σ, reshape(c.bias, 1, map(_->1, c.stride)..., :)
   overdub(Trace(), (x, σ, b) -> (σ).(x .+ b), conv, σ, b)
 end
 
-jscall(::typeof(conv2d), x...) = jscall(:(dl.conv2d), x...)
+jscall(::typeof(conv2d), x...) = jscall(:(math.conv2d), x...)
 
-shape(::typeof(conv2d), x, weight, stride, pad) =
-  Shape{Int64}(cdims(size(x), size(weight), padtuple(x, pad), stride))
+shape(::typeof(conv2d), x::Shape{T,N}, weight, stride, pad) where {T,N} =
+  Shape{T}(cdims(size(x), size(weight), padtuple(x, pad), stride))
 
 # broadcasted ops
 
