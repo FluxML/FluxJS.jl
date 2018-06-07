@@ -67,7 +67,7 @@ jscall(::typeof(concat1D), a, b) = jscall(:(math.concat1D), a, b)
 @primitive Trace softmax(x::AbstractVecOrMat) =
   StagedArray(softmax, x)
 
-jscall(::typeof(softmax), x) = jscall(:(math.softmax), x)
+jscall(::typeof(softmax), x) = jscall(:(math.softmax), jscall(:(flux.coat), x))
 
 shape(::typeof(softmax), x) = shape(x)
 
@@ -111,7 +111,7 @@ shape(::typeof(broadcast), f, xs...) =
 
 bcastable(+, *, tanh, relu, σ)
 
-jscall(::typeof(broadcast), ::typeof(+), a, b) = jscall(:(math.add), a, b)
+jscall(::typeof(broadcast), ::typeof(+), a, b) = jscall(:(flux.add), a, b)
 jscall(::typeof(broadcast), ::typeof(σ), x) = jscall(:(math.sigmoid), x)
 jscall(::typeof(broadcast), ::typeof(tanh), x) = jscall(:(math.tanh), x)
 jscall(::typeof(broadcast), ::typeof(relu), x) = jscall(:(math.relu), x)
