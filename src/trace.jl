@@ -1,5 +1,6 @@
-using Vinyl: @primitive, overdub
+using Vinyl: @primitive, overdub, isprimitive, primitive
 using DataFlow
+import ASTInterpreter2._Typeof
 
 struct Trace
   states::Vector{Any}
@@ -9,28 +10,37 @@ Trace() = Trace([])
 
 struct StagedArray{T,N} <: AbstractArray{T,N}
   graph::IVertex{Any}
-  dims::NTuple{N,Int}
+  val
 end
 
-Base.size(x::StagedArray) = x.dims
+Base.size(x::StagedArray) = size(x.val)
 
 Base.show(io::IO, ::MIME"text/plain", s::StagedArray) =
-  print(io, "StagedArray{$(eltype(s))}($(s.dims), $(s.graph))")
+  print(io, "StagedArray{$(eltype(s))}($(size(s.val)), $(s.graph))")
 
 Base.show(io::IO, s::StagedArray) =
-  print(io, "StagedArray{$(eltype(s))}($(s.dims))")
+  print(io, "StagedArray{$(eltype(s))}($(size(s.val)))")
+
+val(x) = x
+val(x::StagedArray) = x.val
+val(x::Tuple) = val.(x)
+
+dims(x) = size(x)
+dims(x::Tuple) = length(x)
+dims(x::StagedArray) = dims(val(x))
+
+_Typeof(x) = isa(x,Type) ? Type{x} : typeof(val(x))
 
 graph(x::StagedArray) = x.graph
 graph(x) = DataFlow.constant(x)
 vcall(args...) = DataFlow.vertex(DataFlow.Call(), graph.(args)...)
 
-function StagedArray(f, args...)
-  sh = shape(f, shape.(args)...)
-  StagedArray{eltype(sh),ndims(sh)}(vcall(f, args...),sh.dims)
-end
+StagedArray(f, args...; v=val(f(val.(args)...))) =
+  StagedArray{eltype(v),dims(v)}(vcall(f, args...),v)
 
-stage(x::AbstractArray{T,N}, v) where {T,N} = StagedArray{T,N}(v, size(x))
-stage(x::Real, v) = StagedArray{typeof(x),0}(v, ())
+
+stage(x::AbstractArray{T,N}, v) where {T,N} = StagedArray{T,N}(v, val(x))
+stage(x::Real, v) = StagedArray{typeof(x),0}(v, val(x))
 stage(x, v) = error("Unsupported type $(typeof(x))")
 
 trace(f, args...; meta = Trace()) = overdub(meta, f, args...)
