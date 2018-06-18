@@ -35,8 +35,10 @@ graph(x::StagedArray) = x.graph
 graph(x) = DataFlow.constant(x)
 vcall(args...) = DataFlow.vertex(DataFlow.Call(), graph.(args)...)
 
-StagedArray(f, args...; v=val(f(val.(args)...))) =
+function StagedArray(f, args...; v=val(f(val.(args)...)))
+  @show f, args, v
   StagedArray{typeof(v),dims(v)}(vcall(f, args...),v)
+end
 
 stage(x::AbstractArray{T,N}, v) where {T,N} = StagedArray{T,N}(v, val(x))
 stage(x::Tuple, v) = StagedArray{Tuple{eltype(x)},dims(x)}(v, val(x))
@@ -83,11 +85,14 @@ control(a::IVertex, b::IVertex = DataFlow.inputnode()) = vcall(control, a, b)
   i = length(ctx.states)-1
   states = control(DataFlow.constant(:states))
   state = stage(f.init, vcall(getindex, states, i))
-  h, y = trace(f.cell, state, stagedinputs(args...)...)
+  out = trace(f.cell, state, stagedinputs(args...)...)
+  h = trace((o) -> o[1], out)
+  y = trace((o) -> o[2], out)
   λ = vertex(DataFlow.Lambda(length(args),
                              vertex(DataFlow.Do(),
                                     vcall(setindex!, states, unwrap(h), i),
                                     graph(y))))
+  @show λ
   wrap(y, vcall(λ, args...))
 end
 

@@ -162,10 +162,18 @@ jscall(::typeof(view), x, start, length) =
 
 @primitive Trace start(x::StagedArray) = StagedArray(start, x)
 
-@primitive Trace function Base.getindex(t::StagedArray, i::Union{Int,StagedArray{Int}})
-  index =  primitive(Trace(), (-), i, 1)
-  StagedArray(getindex, t, index, v = val(t)[val(i)])
+@primitive Trace Base.getindex(t::StagedArray, i::Int) = 
+  StagedArray(getindex, t, i - 1, v = val(t)[i])
+
+@primitive Trace function Base.getindex(t, i::StagedArray{Int})
+  index = overdub(Trace(), x -> x - 1, i)
+  StagedArray(getindex, t, i, v = val(t)[val(i)])
 end
+
+@primitive Trace function tuple(args...)
+  any(x -> x isa StagedArray, args) ? StagedArray(tuple, args...) : trace(tuple, args...)
+end
+
 
 # @primitive Trace function Base.getindex(t::StagedArray, i...)
 #   _begin = []
@@ -226,5 +234,5 @@ binary_op(*, mul)
 binary_op(-, sub)
 
 jscall(::typeof(add), x, y) = jscall(:(flux.add), x, y)
-# jscall(::typeof(-), x::Union{StagedArray{Int},Int}, y::Union{StagedArray{Int},Int}) = jscall(:(flux.sub), x, y)
+jscall(::typeof(sub), x, y) = jscall(:(flux.sub), x, y)
 jscall(::typeof(mul), x, y) = jscall(:(flux.mul), x, y)
