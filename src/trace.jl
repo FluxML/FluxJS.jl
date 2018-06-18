@@ -16,16 +16,16 @@ end
 Base.size(x::StagedArray) = size(x.val)
 
 Base.show(io::IO, ::MIME"text/plain", s::StagedArray) =
-  print(io, "StagedArray{$(eltype(s))}($(size(s.val)), $(s.graph))")
+  print(io, "StagedArray{$(eltype(s)),$(ndims(s))}($(s.val), $(s.graph))")
 
 Base.show(io::IO, s::StagedArray) =
-  print(io, "StagedArray{$(eltype(s))}($(size(s.val)))")
+  print(io, "StagedArray{$(eltype(s)),$(ndims(s))}")
 
 val(x) = x
-val(x::StagedArray) = x.val
+val(x::StagedArray) = val(x.val)
 val(x::Tuple) = val.(x)
 
-dims(x) = size(x)
+dims(x) = ndims(x)
 dims(x::Tuple) = length(x)
 dims(x::StagedArray) = dims(val(x))
 
@@ -36,11 +36,11 @@ graph(x) = DataFlow.constant(x)
 vcall(args...) = DataFlow.vertex(DataFlow.Call(), graph.(args)...)
 
 StagedArray(f, args...; v=val(f(val.(args)...))) =
-  StagedArray{eltype(v),dims(v)}(vcall(f, args...),v)
-
+  StagedArray{typeof(v),dims(v)}(vcall(f, args...),v)
 
 stage(x::AbstractArray{T,N}, v) where {T,N} = StagedArray{T,N}(v, val(x))
-stage(x::Real, v) = StagedArray{typeof(x),0}(v, val(x))
+stage(x::Tuple, v) = StagedArray{Tuple{eltype(x)},dims(x)}(v, val(x))
+stage(x::Real, v) = StagedArray{typeof(x),dims(x)}(v, val(x))
 stage(x, v) = error("Unsupported type $(typeof(x))")
 
 trace(f, args...; meta = Trace()) = overdub(meta, f, args...)

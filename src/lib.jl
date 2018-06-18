@@ -1,4 +1,5 @@
 using NNlib: cdims, padtuple, pdims, conv
+using Vinyl: primitive
 
 # struct Shape{T,N}
 #   dims::NTuple{N,Int}
@@ -116,6 +117,7 @@ jscall(::typeof(broadcast), ::typeof(+), a, b) = jscall(:(math.add), a, b)
 jscall(::typeof(broadcast), ::typeof(σ), x) = jscall(:(math.sigmoid), x)
 jscall(::typeof(broadcast), ::typeof(tanh), x) = jscall(:(math.tanh), x)
 jscall(::typeof(broadcast), ::typeof(relu), x) = jscall(:(math.relu), x)
+jscall(::typeof(broadcast), ::typeof(*), x, y) = jscall(:(math.matMul), x, y)
 
 # shape(::typeof(reshape), x::Shape{T}, i...) where T =
 #   Shape{T}(Base._reshape_uncolon(x, i))
@@ -135,17 +137,94 @@ jscall(::typeof(broadcast), ::typeof(relu), x) = jscall(:(math.relu), x)
   StagedArray(reshape, parent, dims...)
 end
 
-@primitive t::Trace function Base.reshape(parent, dims::Tuple{Vararg{Union{Int,Colon}}})
-  dims = Base._reshape_uncolon(val(parent), val.(dims))
-  overdub(t, (x...)-> reshape(x...), parent, dims...)
-end
-
 jscall(::typeof(reshape), p, dims...) =
+  all(x -> x isa Integer, dims) ? (jscall(:(math.reshape), p, dims)) :
   jscall(:(math.reshape), p, jscall(:(Array().constructor), dims...))
 
 # size
-@primitive Trace Base.size(x...) =
-  StagedArray(size, x...)
+@primitive Trace Base.size(x) =
+  StagedArray(getindex, x, "shape", v=size(val(x)))
 
-jscall(::typeof(size), x) = jscall(:(flux.getprop), x, "shape")
-jscall(s::typeof(size), x, i) = jscall(:(flux.getprop), jscall(s, x), i)
+@primitive Trace function Base.size(x, i)
+  _size = overdub(Trace(), (x) -> size(x), x);
+  index = overdub(Trace(), (i)-> (i - 1), i)
+  StagedArray(getindex, _size, index, v=size(val(x))[val(i)])
+end
+
+@primitive ctx::Trace function Flux.gate(x::AbstractArray, h, n)
+  out = Flux.gate(val(x), val(h), val(n))
+  _start =  overdub(Trace(), (h, n) -> h * (n-1), h, n)
+  StagedArray(view, x, _start, h, v=out)
+end
+
+jscall(::typeof(view), x, start, length) =
+  jscall(:(math.slice), x, start, length)
+
+@primitive Trace start(x::StagedArray) = StagedArray(start, x)
+
+@primitive Trace function Base.getindex(t::StagedArray, i::Union{Int,StagedArray{Int}})
+  index =  primitive(Trace(), (-), i, 1)
+  StagedArray(getindex, t, index, v = val(t)[val(i)])
+end
+
+# @primitive Trace function Base.getindex(t::StagedArray, i...)
+#   _begin = []
+#   _size = []
+#   for j=1:length(i)
+#     b, s = split(t, i[j], j)
+#     push!(_begin, b)
+#     push!(_size, s)
+#   end
+#   StagedArray(view, t, _begin, _size, v=getindex(val(t), val.(i)...))
+# end
+#
+# Base.split(t, i::Union{Int,StagedArray{Int}}, j) = (val(i) - 1, 1)
+# function Base.split(t, i::StagedArray{UnitRange{Int}}, j)
+#   start = StagedArray{Int,0}(graph(i).inputs[1], val(i).start)
+#   stop = StagedArray{Int,0}(graph(i).inputs[2], val(i).stop)
+#   @show graph(start)
+#   @show graph(stop)
+#   c = primitive(Trace(), (-), start, 1)
+#   (c , primitive(Trace(),(-), stop, c)) # (start - 1, stop - start + 1)
+# end
+# Base.split(t, ::Colon, j) = (0, primitive(Trace(), size, t, j))
+#
+# function jscall(::typeof(view), t, _begin, _size)
+#   println("view")
+#   @show t, _begin, _size
+#   jscall(:(math.slice), t, jscall(:(Array().constructor), _begin...), jscall(:(Array().constructor), _size...))
+# end
+#
+# @primitive Trace (f::Any)(t::StagedArray{UnitRange{Int}}) = StagedArray(f, t)
+#
+# Base.start(::StagedArray{T,N}) where {T<:Union{AbstractArray,Tuple},N} = 1
+#
+# Base.convert(::Type{StagedArray{T,N}}, x::StagedArray{T,N}) where {T,N} = x
+# Base.convert(::Type{StagedArray{T,N}}, x::StagedArray{S,N}) where {T,S,N} = StagedArray{T,N}(graph(x),convert(T,val(x)))
+#
+# # for StagedArray{Tuple}
+#
+# @primitive Trace Base.start(t::StagedArray{Tuple{T},N}) where T where N =
+#   stage(1, DataFlow.constant(1))
+#
+# @primitive Trace Base.length(t::StagedArray{Tuple{T},N}) where T where N =
+#   StagedArray(length, t)
+
+add(x, y) = x + y
+sub(x, y) = x - y
+mul(x, y) = x * y
+
+# for StagedArray{Int}
+function binary_op(op, sub)
+  @eval @primitive Trace ($op)(x::T, y::T) where {T<:StagedArray{Int64,0}} = StagedArray($sub, x, y)
+  @eval @primitive Trace ($op)(x::T, y::S) where {T<:StagedArray{Int64,0}} where {S<:Int64} = StagedArray($sub, x, y)
+  @eval @primitive Trace ($op)(x::S, y::T) where {T<:StagedArray{Int64,0}} where {S<:Int64} = StagedArray($sub, x, y)
+end
+
+binary_op(+, add)
+binary_op(*, mul)
+binary_op(-, sub)
+
+jscall(::typeof(add), x, y) = jscall(:(flux.add), x, y)
+# jscall(::typeof(-), x::Union{StagedArray{Int},Int}, y::Union{StagedArray{Int},Int}) = jscall(:(flux.sub), x, y)
+jscall(::typeof(mul), x, y) = jscall(:(flux.mul), x, y)
