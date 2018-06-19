@@ -111,13 +111,15 @@ jscall(::typeof(maxpool), x, k, pad, stride) = jscall(:(math.maxPool), x, k, str
 # shape(::typeof(broadcast), f, xs...) =
 #   Shape{eltype(xs[1])}(Base.Broadcast.broadcast_shape(size.(xs)...)...)
 
-bcastable(+, *, tanh, relu, σ)
+bcastable(+, *, tanh, relu, σ, -, /)
 
 jscall(::typeof(broadcast), ::typeof(+), a, b) = jscall(:(math.add), a, b)
 jscall(::typeof(broadcast), ::typeof(σ), x) = jscall(:(math.sigmoid), x)
 jscall(::typeof(broadcast), ::typeof(tanh), x) = jscall(:(math.tanh), x)
 jscall(::typeof(broadcast), ::typeof(relu), x) = jscall(:(math.relu), x)
 jscall(::typeof(broadcast), ::typeof(*), x, y) = jscall(:(math.matMul), x, y)
+jscall(::typeof(broadcast), ::typeof(-), x, y) = jscall(:(math.sub), x, y)
+jscall(::typeof(broadcast), ::typeof(/), x, y) = jscall(:(math.div), x, y)
 
 # shape(::typeof(reshape), x::Shape{T}, i...) where T =
 #   Shape{T}(Base._reshape_uncolon(x, i))
@@ -130,26 +132,42 @@ jscall(::typeof(broadcast), ::typeof(*), x, y) = jscall(:(math.matMul), x, y)
 
 # reshape
 
-@primitive Trace function Base.reshape(parent::AbstractArray, dims...)
-  dims = any(x -> val(x) isa Colon, dims) ?
-  map((x, y) -> val(x) isa Colon? y : x
-    , dims, Base._reshape_uncolon(val(parent), val.(dims))) : dims
-  StagedArray(reshape, parent, dims...)
+@primitive Trace Base.reshape(parent, dims...) =
+  ! any(x -> x isa StagedArray, (parent, dims...)) ?
+  trace(reshape, parent, dims...) :
+  begin
+    dims = any(x -> val(x) isa Colon, dims) ?
+    map((x, y) -> val(x) isa Colon? y : x
+      , dims, Base._reshape_uncolon(val(parent), val.(dims))) : dims
+    StagedArray(reshape, parent, dims)
+  end
+
+@primitive Trace function Base.reshape(parent, dims::StagedArray)
+  @show parent, dims
+  StagedArray(reshape, parent, dims)
 end
 
 jscall(::typeof(reshape), p, dims...) =
-  all(x -> x isa Integer, dims) ? (jscall(:(math.reshape), p, dims)) :
-  jscall(:(math.reshape), p, jscall(:(Array().constructor), dims...))
+  all(x -> x isa Integer, dims) ? (jscall(:(math.reshape), p, reverse(dims))) :
+  jscall(:(math.reshape), p, jscall(tuple, reverse(dims)...))
+
+jscall(::typeof(reshape), p, dims) =
+  jscall(:(math.reshape), p,
+   jscall(:(Array.prototype.reverse.call),
+    jscall(:(Array.prototype.slice.call) ,dims))) # since reverse is an inplace opertion
 
 # size
-@primitive Trace Base.size(x) =
+@primitive Trace Base.size(x::StagedArray) =
   StagedArray(getindex, x, "shape", v=size(val(x)))
 
-@primitive Trace function Base.size(x, i)
-  _size = overdub(Trace(), (x) -> size(x), x);
-  index = overdub(Trace(), (i)-> (i - 1), i)
-  StagedArray(getindex, _size, index, v=size(val(x))[val(i)])
-end
+@primitive Trace Base.size(x, i) =
+  ! any(x -> x isa StagedArray, (x, i)) ?
+  trace(size, x, i) :
+  begin
+    _size = trace((x) -> size(x), x);
+    index = trace((s, i)-> (length(s) - i), _size ,i) # js arrays are reversed
+    StagedArray(getindex, _size, index, v=size(val(x))[val(i)])
+  end
 
 @primitive ctx::Trace function Flux.gate(x::AbstractArray, h, n)
   out = Flux.gate(val(x), val(h), val(n))
@@ -162,7 +180,7 @@ jscall(::typeof(view), x, start, length) =
 
 @primitive Trace start(x::StagedArray) = StagedArray(start, x)
 
-@primitive Trace Base.getindex(t::StagedArray, i::Int) = 
+@primitive Trace Base.getindex(t::StagedArray, i::Int) =
   StagedArray(getindex, t, i - 1, v = val(t)[i])
 
 @primitive Trace function Base.getindex(t, i::StagedArray{Int})
@@ -236,3 +254,53 @@ binary_op(-, sub)
 jscall(::typeof(add), x, y) = jscall(:(flux.add), x, y)
 jscall(::typeof(sub), x, y) = jscall(:(flux.sub), x, y)
 jscall(::typeof(mul), x, y) = jscall(:(flux.mul), x, y)
+
+@primitive Trace function (BN::BatchNorm)(x)
+  μ, σ, γ, β, λ = BN.μ, BN.σ, BN.γ, BN.β, BN.λ
+
+  dims = trace(x -> length(size(x)), x)
+  channels = trace((x,dims) -> size(x, dims - 1), x, dims)
+
+  affine_shape = trace((dims, channels) -> begin
+    affine_shape = Flux.data(ones(Int, dims))
+    affine_shape[dims-1] = channels # not traced
+    affine_shape
+  end, dims, channels)
+
+  dims_ = trace(dims -> dims - 2, dims)
+
+  setShape = vertex(DataFlow.Lambda(1,
+    vertex(DataFlow.Do(),
+      vcall(setindex!, unwrap(affine_shape), unwrap(channels), unwrap(dims_)),
+      unwrap(affine_shape))
+      ))
+
+  affine_shape = wrap(affine_shape, vcall(setShape, x))
+
+  trace((x, μ, σ, γ, β, λ, affine_shape) -> begin
+    k = Tuple(affine_shape)
+    μ = reshape(μ, k)
+    σ = reshape(σ, k)
+    γ = reshape(γ, k)
+    β = reshape(β, k)
+    λ.(γ .* ((x .- μ) ./ σ) .+ β)
+  end, x, μ, σ, γ, β, λ, affine_shape)
+end
+
+
+
+@primitive Trace Base.length(s::StagedArray) = StagedArray(getindex, s, "length", v=length(val(s)))
+@primitive Trace Base.ones(t, i::StagedArray) = StagedArray(ones, t, i)
+@primitive Trace Tuple(t::StagedArray) = StagedArray(Flux.data, t, v=Tuple(val(t)))
+@primitive Trace Flux.data(t::StagedArray) = StagedArray(Flux.data, t)
+
+jscall(::typeof(Base.ones), t, i) = jscall(:(tf.ones), jscall(tuple, i), dtype(t))
+jscall(::typeof(Flux.data), t) = jscall(:(flux.data), t)
+
+dtype(::Type{Int}) = "int32"
+dtype(::Type{Float32}) = "float32"
+
+@primitive Trace Base.setindex!(A, X, i) =
+  any(x -> x isa StagedArray , (A, X)) ?
+  StagedArray(setindex!, A, X, trace((i) -> i - 1, i), v = setindex!(val(A), val(X), val(i))) :
+  trace(setindex!, A, X, i)

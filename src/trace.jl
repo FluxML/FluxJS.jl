@@ -13,7 +13,7 @@ struct StagedArray{T,N} <: AbstractArray{T,N}
   val
 end
 
-Base.size(x::StagedArray) = size(x.val)
+Base.size(x::StagedArray) = size(val(x))
 
 Base.show(io::IO, ::MIME"text/plain", s::StagedArray) =
   print(io, "StagedArray{$(eltype(s)),$(ndims(s))}($(s.val), $(s.graph))")
