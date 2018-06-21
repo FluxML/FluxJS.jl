@@ -21,6 +21,11 @@ jscall(::typeof(*), a, b) = jscall(:(math.matMul), b, a)
 
 jscall(::typeof(matVecMul), a, b) = jscall(:(math.vectorTimesMatrix), b, a)
 
+@primitive Trace x::AbstractArray + y::AbstractArray =
+  StagedArray(+, x, y)
+
+jscall(::typeof(+), a, b) = jscall(:(math.add), b, a)
+
 # cat
 
 concat1D(a, b) = vcat(a, b)
@@ -39,8 +44,6 @@ jscall(::typeof(concat1D), a, b) = jscall(:(math.concat1D), a, b)
   StagedArray(softmax, x)
 
 jscall(::typeof(softmax), x) = jscall(:(math.softmax), x)
-
-# shape(::typeof(softmax), x) = shape(x)
 
 # conv2d
 
@@ -67,9 +70,6 @@ function jscall(::typeof(conv2d), x, w, s, p)
   permutedims(_out, to_NCHW)
 end
 
-# shape(::typeof(conv2d), x::Shape{T}, weight, stride, pad) where T =
-#   Shape{T}(cdims(size(x), size(weight), padtuple(x, pad), stride))
-
 # maxpool
 
 @primitive Trace function maxpool(x::AbstractArray, k; pad = map(_->0,k), stride = k)
@@ -91,11 +91,8 @@ function jscall(::typeof(maxpool), x, k, pad, stride)
 end
 
 # broadcasted ops
-
-# shape(::typeof(broadcast), f, xs...) =
-#   Shape{eltype(xs[1])}(Base.Broadcast.broadcast_shape(size.(xs)...)...)
-
-bcastable(+, *, tanh, relu, σ, -, /)
+bcastable(+, *, tanh, relu, σ, -, /, copy)
+# copy for residual blocks
 
 jscall(::typeof(broadcast), ::typeof(+), a, b) = jscall(:(math.add), a, b)
 jscall(::typeof(broadcast), ::typeof(σ), x) = jscall(:(math.sigmoid), x)
@@ -104,15 +101,7 @@ jscall(::typeof(broadcast), ::typeof(relu), x) = jscall(:(math.relu), x)
 jscall(::typeof(broadcast), ::typeof(*), x, y) = jscall(:(math.mul), y, x)
 jscall(::typeof(broadcast), ::typeof(-), x, y) = jscall(:(math.sub), x, y)
 jscall(::typeof(broadcast), ::typeof(/), x, y) = jscall(:(math.div), x, y)
-
-# shape(::typeof(reshape), x::Shape{T}, i...) where T =
-#   Shape{T}(Base._reshape_uncolon(x, i))
-#
-# shape(x) = x
-# shape(x::Shape) = x
-# shape(x::Tuple) = shape.(x)
-# shape(x::AbstractArray) = Shape{eltype(x)}(size(x)...)
-# shape(x::TrackedArray) = shape(x.data)
+jscall(::typeof(broadcast), ::typeof(copy), A) = jscall(:(math.clone), A)
 
 # reshape
 
@@ -124,17 +113,12 @@ jscall(::typeof(broadcast), ::typeof(/), x, y) = jscall(:(math.div), x, y)
       p = 1
       pos = 0
       for i=1:length(dims)
-        @show val(p)
         !( val(dims[i]) isa Colon ) ?
          p = tracecall((p, v)-> p*v, p, dims[i]) : (pos = i)
-        @show unwrap(p)
       end
-      @show val(p), unwrap(p)
       c = tracecall((x, p) -> (count(x)/p), parent, p)
-      @show val(c)
       (dims[1:pos-1]..., c, dims[pos+1:end]...)
     end : dims
-    @show dims, val(dims)
     StagedArray(reshape, parent, dims..., v=reshape(val(parent), Int.(val.(dims))...))
   end
 
@@ -181,50 +165,6 @@ end
 @primitive Trace function tuple(args...)
   any(x -> x isa StagedArray, args) ? StagedArray(tuple, args...) : trace(tuple, args...)
 end
-
-
-# @primitive Trace function Base.getindex(t::StagedArray, i...)
-#   _begin = []
-#   _size = []
-#   for j=1:length(i)
-#     b, s = split(t, i[j], j)
-#     push!(_begin, b)
-#     push!(_size, s)
-#   end
-#   StagedArray(view, t, _begin, _size, v=getindex(val(t), val.(i)...))
-# end
-#
-# Base.split(t, i::Union{Int,StagedArray{Int}}, j) = (val(i) - 1, 1)
-# function Base.split(t, i::StagedArray{UnitRange{Int}}, j)
-#   start = StagedArray{Int,0}(graph(i).inputs[1], val(i).start)
-#   stop = StagedArray{Int,0}(graph(i).inputs[2], val(i).stop)
-#   @show graph(start)
-#   @show graph(stop)
-#   c = primitive(Trace(), (-), start, 1)
-#   (c , primitive(Trace(),(-), stop, c)) # (start - 1, stop - start + 1)
-# end
-# Base.split(t, ::Colon, j) = (0, primitive(Trace(), size, t, j))
-#
-# function jscall(::typeof(view), t, _begin, _size)
-#   println("view")
-#   @show t, _begin, _size
-#   jscall(:(math.slice), t, jscall(:(Array().constructor), _begin...), jscall(:(Array().constructor), _size...))
-# end
-#
-# @primitive Trace (f::Any)(t::StagedArray{UnitRange{Int}}) = StagedArray(f, t)
-#
-# Base.start(::StagedArray{T,N}) where {T<:Union{AbstractArray,Tuple},N} = 1
-#
-# Base.convert(::Type{StagedArray{T,N}}, x::StagedArray{T,N}) where {T,N} = x
-# Base.convert(::Type{StagedArray{T,N}}, x::StagedArray{S,N}) where {T,S,N} = StagedArray{T,N}(graph(x),convert(T,val(x)))
-#
-# # for StagedArray{Tuple}
-#
-# @primitive Trace Base.start(t::StagedArray{Tuple{T},N}) where T where N =
-#   stage(1, DataFlow.constant(1))
-#
-# @primitive Trace Base.length(t::StagedArray{Tuple{T},N}) where T where N =
-#   StagedArray(length, t)
 
 add(x, y) = x + y
 sub(x, y) = x - y
@@ -297,3 +237,8 @@ dtype(::Type{Float32}) = "float32"
   any(x -> x isa StagedArray , (A, X)) ?
   StagedArray(setindex!, A, X, trace((i) -> i - 1, i), v = setindex!(val(A), val(X), val(i))) :
   trace(setindex!, A, X, i)
+
+@primitive Trace copy(A::StagedArray{AbstractArray,N}) where N =
+  StagedArray(copy,A)
+
+jscall(::typeof(copy), A) = jscall((math.clone), A)

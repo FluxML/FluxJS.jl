@@ -36,7 +36,7 @@ graph(x) = DataFlow.constant(x)
 vcall(args...) = DataFlow.vertex(DataFlow.Call(), graph.(args)...)
 
 function StagedArray(f, args...; v=val(f(val.(args)...)))
-  @show f, args, v
+  @show f, args
   StagedArray{typeof(v),dims(v)}(vcall(f, args...),v)
 end
 
@@ -92,7 +92,6 @@ control(a::IVertex, b::IVertex = DataFlow.inputnode()) = vcall(control, a, b)
                              vertex(DataFlow.Do(),
                                     vcall(setindex!, states, unwrap(h), i),
                                     graph(y))))
-  @show λ
   wrap(y, vcall(λ, args...))
 end
 
