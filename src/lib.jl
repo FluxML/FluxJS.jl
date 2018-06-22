@@ -9,8 +9,6 @@ const to_NHWC = :([0, 2, 3, 1])
 
 matVecMul(args...) = *(args...)
 
-shape(::typeof(matVecMul), args...) = shape(*, args...)
-
 @primitive Trace x::AbstractMatrix * y::AbstractMatrix =
   StagedArray(*, x, y)
 
@@ -130,7 +128,9 @@ jscall(::typeof(reshape), p, dims...) =
 
 # size
 @primitive Trace Base.size(x::StagedArray) =
-  StagedArray(getindex, x, "shape", v=size(val(x)))
+  StagedArray(size, x)
+
+jscall(::typeof(size), x) = jscall(:(flux.shape), x)
 
 @primitive Trace Base.size(x, i) =
   ! any(x -> x isa StagedArray, (x, i)) ?
@@ -151,13 +151,31 @@ jscall(::typeof(view), x, start, length) =
   jscall(:(math.slice), x, start, length)
 
 @primitive Trace start(x::StagedArray) = StagedArray(start, x)
+jscall(::typeof(start), x) = DataFlow.constant(0)
+
+@primitive Trace Base.getfield(x, i) =
+  ! any(x -> x isa StagedArray, (x, i)) ?
+  trace(getfield, x, i) :
+  StagedArray(getindex, x, "$i", v=getfield(val(x), val(i)))
+
+@primitive Trace function Base.getfield(x::StagedArray, i::Union{StagedArray{Int,0},Int})
+  StagedArray(getindex, x, primitive(Trace(), -, i, 1), v=getfield(val(x), val(i)))
+end
+
+@primitive Trace function Base.getfield(x, i::StagedArray{Int,0})
+  StagedArray(getindex, x, primitive(Trace(), -, i, 1), v=getfield(val(x), val(i)))
+end
+
+@primitive Trace function Base.indexed_next(x::StagedArray, i, state)
+  StagedArray(tuple, primitive(Trace(), getindex, x, i), primitive(Trace(), +, state, 1))
+end
 
 Base.getindex(x::StagedArray, i) = StagedArray(getindex, x, i - 1, v=getindex(val(x), i)) # for splat operator to work
 
 @primitive Trace Base.getindex(t::StagedArray, i::Int) =
   StagedArray(getindex, t, i - 1, v = val(t)[i])
 
-@primitive Trace function Base.getindex(t, i::StagedArray{Int})
+@primitive Trace function Base.getindex(t, i::StagedArray{Int,0})
   index = overdub(Trace(), x -> x - 1, i)
   StagedArray(getindex, t, i, v = val(t)[val(i)])
 end

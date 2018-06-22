@@ -36,7 +36,6 @@ graph(x) = DataFlow.constant(x)
 vcall(args...) = DataFlow.vertex(DataFlow.Call(), graph.(args)...)
 
 function StagedArray(f, args...; v=val(f(val.(args)...)))
-  @show f, args
   StagedArray{typeof(v),dims(v)}(vcall(f, args...),v)
 end
 
@@ -80,8 +79,11 @@ end
 
 control(a::IVertex, b::IVertex = DataFlow.inputnode()) = vcall(control, a, b)
 
+data(x) = Flux.data(x)
+data(x::Tuple) = data.(x)
+
 @primitive ctx::Trace function (f::Flux.Recur)(args...)
-  push!(ctx.states, f.init)
+  push!(ctx.states, data(f.init))
   i = length(ctx.states)-1
   states = control(DataFlow.constant(:states))
   state = stage(f.init, vcall(getindex, states, i))

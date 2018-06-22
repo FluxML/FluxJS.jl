@@ -73,7 +73,6 @@ function insert_returns(ex)
 end
 
 function prepare(ex, name, states = nothing)
-  @show ex
   state_setup = states == nothing ? :(;) :
     :(init = $states; states = init.slice())
   reset_method = states == nothing ? :(;) :
