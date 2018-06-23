@@ -82,7 +82,7 @@ function jsexpr(io::IO, x; level = 0)
     x.args[1] == nothing && return print(io, "return")
     print(io, "return ")
     jsexpr(io, x.args[1], level = level)
-  elseif isexpr(x, :ref) && isexpr(x.args[1], :tuple)
+  elseif isexpr(x, :ref)
     jsexpr(io, x.args[1])
     print(io, "[$(x.args[2])]")
   else

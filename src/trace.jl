@@ -79,11 +79,12 @@ end
 
 control(a::IVertex, b::IVertex = DataFlow.inputnode()) = vcall(control, a, b)
 
-data(x) = Flux.data(x)
-data(x::Tuple) = data.(x)
+tensor(x::TrackedArray) = StagedArray(tensor, Flux.data(x), reverse(size(x)),v=Flux.data(x))
+tensor(x::Tuple) = tensor.(x)
+jscall(::typeof(tensor), x...) = jscall(:(math.tensor), x...)
 
 @primitive ctx::Trace function (f::Flux.Recur)(args...)
-  push!(ctx.states, data(f.init))
+  push!(ctx.states, tensor(f.init))
   i = length(ctx.states)-1
   states = control(DataFlow.constant(:states))
   state = stage(f.init, vcall(getindex, states, i))
