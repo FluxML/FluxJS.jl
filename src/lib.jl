@@ -89,7 +89,7 @@ function jscall(::typeof(maxpool), x, k, pad, stride)
 end
 
 # broadcasted ops
-bcastable(+, *, tanh, relu, σ, -, /, copy)
+bcastable(+, *, tanh, relu, σ, -, /)
 # copy for residual blocks
 
 jscall(::typeof(broadcast), ::typeof(+), a, b) = jscall(:(math.add), a, b)
@@ -99,7 +99,6 @@ jscall(::typeof(broadcast), ::typeof(relu), x) = jscall(:(math.relu), x)
 jscall(::typeof(broadcast), ::typeof(*), x, y) = jscall(:(math.mul), y, x)
 jscall(::typeof(broadcast), ::typeof(-), x, y) = jscall(:(math.sub), x, y)
 jscall(::typeof(broadcast), ::typeof(/), x, y) = jscall(:(math.div), x, y)
-jscall(::typeof(broadcast), ::typeof(copy), A) = jscall(:(math.clone), A)
 
 # reshape
 
@@ -128,9 +127,7 @@ jscall(::typeof(reshape), p, dims...) =
 
 # size
 @primitive Trace Base.size(x::StagedArray) =
-  StagedArray(size, x)
-
-jscall(::typeof(size), x) = jscall(:(flux.shape), x)
+  StagedArray(getindex, x, :(String("shape")), v=size(val(x)))
 
 @primitive Trace Base.size(x, i) =
   ! any(x -> x isa StagedArray, (x, i)) ?
@@ -140,6 +137,8 @@ jscall(::typeof(size), x) = jscall(:(flux.shape), x)
     index = trace((s, i)-> (length(s) - i), _size ,i) # js arrays are reversed
     StagedArray(getindex, _size, index, v=size(val(x))[val(i)])
   end
+
+# gate ( for LSTM and GRU )
 
 @primitive ctx::Trace function Flux.gate(x::AbstractArray, h, n)
   out = Flux.gate(val(x), val(h), val(n))
@@ -158,17 +157,14 @@ jscall(::typeof(start), x) = DataFlow.constant(0)
   trace(getfield, x, i) :
   StagedArray(getindex, x, "$i", v=getfield(val(x), val(i)))
 
-@primitive Trace function Base.getfield(x::StagedArray, i::Union{StagedArray{Int,0},Int})
+@primitive Trace Base.getfield(x::StagedArray, i::Union{StagedArray{Int,0},Int}) =
   StagedArray(getindex, x, primitive(Trace(), -, i, 1), v=getfield(val(x), val(i)))
-end
 
-@primitive Trace function Base.getfield(x, i::StagedArray{Int,0})
+@primitive Trace Base.getfield(x, i::StagedArray{Int,0}) =
   StagedArray(getindex, x, primitive(Trace(), -, i, 1), v=getfield(val(x), val(i)))
-end
 
-@primitive Trace function Base.indexed_next(x::StagedArray, i, state)
+@primitive Trace Base.indexed_next(x::StagedArray, i, state) =
   StagedArray(tuple, primitive(Trace(), getindex, x, i), primitive(Trace(), +, state, 1))
-end
 
 Base.getindex(x::StagedArray, i) = StagedArray(getindex, x, i - 1, v=getindex(val(x), i)) # for splat operator to work
 
@@ -180,9 +176,8 @@ Base.getindex(x::StagedArray, i) = StagedArray(getindex, x, i - 1, v=getindex(va
   StagedArray(getindex, t, i, v = val(t)[val(i)])
 end
 
-@primitive Trace function tuple(args...)
+@primitive Trace tuple(args...) =
   any(x -> x isa StagedArray, args) ? StagedArray(tuple, args...) : trace(tuple, args...)
-end
 
 add(x, y) = x + y
 sub(x, y) = x - y
@@ -238,9 +233,7 @@ jscall(::typeof(div), x, y) = jscall(:(flux.div), x, y)
   end, x, μ, σ, γ, β, λ, affine_shape)
 end
 
-
-
-@primitive Trace Base.length(s::StagedArray) = StagedArray(getindex, s, "length", v=length(val(s)))
+@primitive Trace Base.length(s::StagedArray) = StagedArray(getindex, s, :(String("length")), v=length(val(s)))
 @primitive Trace Base.ones(t, i::StagedArray) = StagedArray(ones, t, i)
 @primitive Trace Tuple(t::StagedArray) = StagedArray(Flux.data, t, v=Tuple(val(t)))
 @primitive Trace Flux.data(t::StagedArray) = StagedArray(Flux.data, t)
@@ -248,8 +241,8 @@ end
 jscall(::typeof(Base.ones), t, i) = jscall(:(tf.ones), jscall(tuple, i), dtype(t))
 jscall(::typeof(Flux.data), t) = jscall(:(flux.data), t)
 
-dtype(::Type{Int}) = "int32"
-dtype(::Type{Float32}) = "float32"
+dtype(::Type{Int}) = :(String("int32"))
+dtype(::Type{Float32}) = :(String("float32"))
 
 @primitive Trace Base.setindex!(A, X, i) =
   any(x -> x isa StagedArray , (A, X)) ?

@@ -35,9 +35,8 @@ graph(x::StagedArray) = x.graph
 graph(x) = DataFlow.constant(x)
 vcall(args...) = DataFlow.vertex(DataFlow.Call(), graph.(args)...)
 
-function StagedArray(f, args...; v=val(f(val.(args)...)))
+StagedArray(f, args...; v=val(f(val.(args)...))) =
   StagedArray{typeof(v),dims(v)}(vcall(f, args...),v)
-end
 
 stage(x::AbstractArray{T,N}, v) where {T,N} = StagedArray{T,N}(v, val(x))
 stage(x::Tuple, v) = StagedArray{Tuple{eltype(x)},dims(x)}(v, val(x))
