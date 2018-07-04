@@ -195,10 +195,10 @@ binary_op(*, mul)
 binary_op(-, sub)
 binary_op(/, div)
 
-jscall(::typeof(add), x, y) = jscall(:(flux.add), x, y)
-jscall(::typeof(sub), x, y) = jscall(:(flux.sub), x, y)
-jscall(::typeof(mul), x, y) = jscall(:(flux.mul), x, y)
-jscall(::typeof(div), x, y) = jscall(:(flux.div), x, y)
+jscall(::typeof(add), x, y) = jscall(:(+), x, y)
+jscall(::typeof(sub), x, y) = jscall(:(-), x, y)
+jscall(::typeof(mul), x, y) = jscall(:(*), x, y)
+jscall(::typeof(div), x, y) = jscall(:(/), x, y)
 
 @primitive Trace function (BN::BatchNorm)(x)
   μ, σ, γ, β, λ = BN.μ, BN.σ, BN.γ, BN.β, BN.λ
