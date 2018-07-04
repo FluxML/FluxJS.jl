@@ -1,5 +1,8 @@
 using NNlib: cdims, padtuple, pdims
 
+const to_NCHW = :([0, 3, 1, 2])
+const to_NHWC = :([0, 2, 3, 1])
+
 struct Shape{T,N}
   dims::NTuple{N,Int}
 end
@@ -43,12 +46,12 @@ shape(::typeof(matVecMul), args...) = shape(*, args...)
 @primitive Trace x::AbstractMatrix * y::AbstractMatrix =
   StagedArray(*, x, y)
 
-jscall(::typeof(*), a, b) = jscall(:(math.matMul), a, b)
+jscall(::typeof(*), a, b) = jscall(:(math.matMul), b, a)
 
 @primitive Trace x::AbstractMatrix * y::AbstractVector =
   StagedArray(matVecMul, x, y)
 
-jscall(::typeof(matVecMul), a, b) = jscall(:(math.matrixTimesVector), a, b)
+jscall(::typeof(matVecMul), a, b) = jscall(:(math.vectorTimesMatrix), b, a)
 
 # cat
 
@@ -85,7 +88,17 @@ shape(::typeof(softmax), x) = shape(x)
   overdub(Trace(), (x, σ, b) -> (σ).(x .+ b), conv, σ, b)
 end
 
-jscall(::typeof(conv2d), x...) = jscall(:(tf.conv2d), x...)
+Base.permutedims(x::Union{StagedArray,IVertex}, p) = jscall(:(math.transpose), x, p)
+Base.reverse(x::StagedArray) = jscall(:(math.transpose), x)
+
+# tf-js uses NHWC while js default is NCHW
+function jscall(::typeof(conv2d), x, w, s, p)
+  _x = permutedims(x, to_NHWC)
+  _w = permutedims(w, [4, 3, 1, 2])
+  _s = reverse(s)
+  _out = jscall(:(math.conv2d), _x, _w, _s, p)
+  permutedims(_out, to_NCHW)
+end
 
 shape(::typeof(conv2d), x::Shape{T}, weight, stride, pad) where T =
   Shape{T}(cdims(size(x), size(weight), padtuple(x, pad), stride))
@@ -100,9 +113,16 @@ shape(::typeof(conv2d), x::Shape{T}, weight, stride, pad) where T =
   StagedArray(maxpool, x, k, pad, stride)
 end
 
-jscall(::typeof(maxpool), x, k, pad, stride) = jscall(:(math.maxPool), x, k, stride, pad)
+function jscall(::typeof(maxpool), x, k, pad, stride)
+  _x = permutedims(x, to_NHWC)
+  _k = reverse(k)
+  _s = reverse(stride)
+  _out = jscall(:(math.maxPool), _x, _k, _s, pad)
+  permutedims(_out, to_NCHW)
+end
 
-shape(::typeof(maxpool), x::Shape{T}, k, pad, stride) where T = Shape{T}(pdims(size(x), k, padtuple(x, pad), stride))
+shape(::typeof(maxpool), x::Shape{T}, k, pad, stride) where T =
+ Shape{T}(pdims(size(x), k, padtuple(x, pad), stride))
 
 # broadcasted ops
 
