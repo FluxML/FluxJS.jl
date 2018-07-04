@@ -133,8 +133,7 @@ jscall(::typeof(reshape), p, dims...) =
   ! any(x -> x isa StagedArray, (x, i)) ?
   trace(size, x, i) :
   begin
-    _size = trace((x) -> size(x), x);
-    index = trace((s, i)-> (length(s) - i), _size ,i) # js arrays are reversed
+    index, _size = invertedindex(x, i)
     StagedArray(getindex, _size, index, v=size(val(x))[val(i)])
   end
 
@@ -253,3 +252,16 @@ dtype(::Type{Float32}) = :(String("float32"))
   StagedArray(copy,A)
 
 jscall(::typeof(copy), A) = jscall((math.clone), A)
+
+@primitive Trace function mean(A::StagedArray, i)
+  index, _ = invertedindex(A, i)
+  StagedArray(mean, A, index, true, v=mean(val(A), val(i)))
+end
+
+jscall(::typeof(mean), x...) = jscall(:(math.mean), x...)
+
+function invertedindex(x::AbstractArray, i)
+  _size = trace((x) -> size(x), x)
+  index = trace((s, i)-> (length(s) - i), _size ,i)
+  return index, _size
+end
