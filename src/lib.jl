@@ -29,7 +29,7 @@ function Base.show(io::IO, s::Shape{T}) where T
 end
 
 # Library of mathematical functions we consider primitive.
-# TODO: store Julia functions and types, to avoid deeplearn.js-specific functions
+# TODO: store Julia functions and types, to avoid tensorflow.js-specific functions
 
 # matmul
 
@@ -129,12 +129,20 @@ shape(::typeof(maxpool), x::Shape{T}, k, pad, stride) where T =
 shape(::typeof(broadcast), f, xs...) =
   Shape{eltype(xs[1])}(Base.Broadcast.broadcast_shape(size.(xs)...)...)
 
-bcastable(+, *, tanh, relu, σ)
+bcastable(+, *, /, ^, tanh, σ, relu, leakyrelu, abs, exp, log)
 
 jscall(::typeof(broadcast), ::typeof(+), a, b) = jscall(:(math.add), a, b)
-jscall(::typeof(broadcast), ::typeof(σ), x) = jscall(:(math.sigmoid), x)
+jscall(::typeof(broadcast), ::typeof(*), a, b) = jscall(:(math.mul), a, b)
+jscall(::typeof(broadcast), ::typeof(/), a, b) = jscall(:(math.div), a, b)
+jscall(::typeof(broadcast), ::typeof(^), a, b) = jscall(:(math.pow), a, b)
 jscall(::typeof(broadcast), ::typeof(tanh), x) = jscall(:(math.tanh), x)
+jscall(::typeof(broadcast), ::typeof(σ), x) = jscall(:(math.sigmoid), x)
 jscall(::typeof(broadcast), ::typeof(relu), x) = jscall(:(math.relu), x)
+jscall(::typeof(broadcast), ::typeof(leakyrelu), x) = jscall(:(math.relu), x, 0.01)
+jscall(::typeof(broadcast), ::typeof(leakyrelu), x, a) = jscall(:(math.relu), x, a)
+jscall(::typeof(broadcast), ::typeof(abs), x) = jscall(:(math.abs), x)
+jscall(::typeof(broadcast), ::typeof(exp), x) = jscall(:(math.exp), x)
+jscall(::typeof(broadcast), ::typeof(log), x) = jscall(:(math.log), x)
 
 shape(::typeof(reshape), x::Shape{T}, i...) where T =
   Shape{T}(Base._reshape_uncolon(x, i))
