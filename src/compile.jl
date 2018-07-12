@@ -79,7 +79,7 @@ function prepare(ex, name, states = nothing)
     :(model.reset = () -> (global states = init.slice(); return);)
   quote
     model = (() -> begin
-      math = dl.ENV.math
+      math = tf;
       $(state_setup.args...)
       model = $(ex)
       $(reset_method.args...)
