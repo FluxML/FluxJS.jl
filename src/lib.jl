@@ -89,7 +89,7 @@ function jscall(::typeof(maxpool), x, k, pad, stride)
 end
 
 # broadcasted ops
-bcastable(+, *, /, ^, tanh, σ, relu, leakyrelu, abs, exp, log, -)
+bcastable(+, *, /, ^, tanh, σ, relu, leakyrelu, abs, exp, log, -, copy)
 # copy for residual blocks
 
 jscall(::typeof(broadcast), ::typeof(+), a, b) = jscall(:(math.add), a, b)
@@ -105,6 +105,7 @@ jscall(::typeof(broadcast), ::typeof(abs), x) = jscall(:(math.abs), x)
 jscall(::typeof(broadcast), ::typeof(exp), x) = jscall(:(math.exp), x)
 jscall(::typeof(broadcast), ::typeof(log), x) = jscall(:(math.log), x)
 jscall(::typeof(broadcast), ::typeof(-), x, y) = jscall(:(math.sub), x, y)
+jscall(::typeof(broadcast), ::typeof(copy), x) = jscall(:(flux.slice), x)
 
 # reshape
 
@@ -126,7 +127,7 @@ jscall(::typeof(broadcast), ::typeof(-), x, y) = jscall(:(math.sub), x, y)
   end
 
 Base.count(x::AbstractArray) = prod(size(x))
-@primitive Trace Base.count(x::AbstractArray) = StagedArray(getindex, x, "size", v=count(val(x)))
+@primitive Trace Base.count(x::AbstractArray) = StagedArray(getindex, x, :(String("size")), v=count(val(x)))
 
 jscall(::typeof(reshape), p, dims...) =
   jscall(:(math.reshape), p, jscall(tuple, reverse(dims)...))
@@ -209,33 +210,33 @@ jscall(::typeof(div), x, y) = jscall(:(/), x, y)
 @primitive Trace function (BN::BatchNorm)(x)
   μ, σ, γ, β, λ = BN.μ, BN.σ, BN.γ, BN.β, BN.λ
 
-  dims = trace(x -> length(size(x)), x)
-  channels = trace((x,dims) -> size(x, dims - 1), x, dims)
+  dims = trace(x -> length(size(x)), stagedinputs(x)...)
+  channels = trace((x,dims) -> size(x, dims - 1), stagedinputs(x)..., dims)
 
   affine_shape = trace((dims, channels) -> begin
-    affine_shape = Flux.data(ones(Int, dims))
+    affine_shape = onesArr(Int, dims)
     affine_shape[dims-1] = channels # not traced
     affine_shape
   end, dims, channels)
 
   dims_ = trace((dims)-> dims - 2, dims)
 
-  setShape = vertex(DataFlow.Lambda(1,
-    vertex(DataFlow.Do(),
-      vcall(setindex!, unwrap(affine_shape), unwrap(channels), unwrap(dims_)),
-      unwrap(affine_shape))
-      ))
-
-  affine_shape = wrap(affine_shape, vcall(setShape, x))
-
-  trace((x, μ, σ, γ, β, λ, affine_shape) -> begin
+  out = trace((x) -> begin
     k = Tuple(affine_shape)
     μ = reshape(μ, affine_shape...)
     σ = reshape(σ, affine_shape...)
     γ = reshape(γ, affine_shape...)
     β = reshape(β, affine_shape...)
     λ.(γ .* ((x .- μ) ./ σ) .+ β)
-  end, x, μ, σ, γ, β, λ, affine_shape)
+  end, stagedinputs(x)...)
+
+  f = vertex(DataFlow.Lambda(1,
+    vertex(DataFlow.Do(),
+      vcall(setindex!, unwrap(affine_shape), unwrap(channels), unwrap(dims_)),
+      unwrap(out))
+      ))
+
+  wrap(out, vcall(f, x))
 end
 
 @primitive Trace Base.length(s::StagedArray) = StagedArray(getindex, s, :(String("length")), v=length(val(s)))
@@ -249,6 +250,10 @@ jscall(::typeof(Flux.data), t) = jscall(:(flux.data), t)
 dtype(::Type{Int}) = :(String("int32"))
 dtype(::Type{Float32}) = :(String("float32"))
 
+onesArr(t, i) = ones(t, i)
+@primitive Trace onesArr(t, i::StagedArray) = StagedArray(onesArr, t, i)
+jscall(::typeof(onesArr), t, i) = jscall(:([].fill.apply), jscall(:(Array), i), :([1]))
+
 @primitive Trace Base.setindex!(A, X, i) =
   any(x -> x isa StagedArray , (A, X)) ?
   StagedArray(setindex!, A, X, trace((i) -> i - 1, i), v = setindex!(val(A), val(X), val(i))) :
@@ -257,7 +262,7 @@ dtype(::Type{Float32}) = :(String("float32"))
 @primitive Trace copy(A::StagedArray{AbstractArray,N}) where N =
   StagedArray(copy,A)
 
-jscall(::typeof(copy), A) = jscall((math.clone), A)
+jscall(::typeof(copy), A) = jscall(:(flux.slice), A)
 
 @primitive Trace function mean(A::StagedArray, i)
   index, _ = invertedindex(A, i)
