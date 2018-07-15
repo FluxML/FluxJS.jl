@@ -5,7 +5,7 @@ const to_NCHW = :([0, 3, 1, 2])
 const to_NHWC = :([0, 2, 3, 1])
 
 # Library of mathematical functions we consider primitive.
-# TODO: store Julia functions and types, to avoid deeplearn.js-specific functions
+# TODO: store Julia functions and types, to avoid tensorflow.js-specific functions
 
 matVecMul(args...) = *(args...)
 
@@ -89,16 +89,22 @@ function jscall(::typeof(maxpool), x, k, pad, stride)
 end
 
 # broadcasted ops
-bcastable(+, *, tanh, relu, σ, -, /)
+bcastable(+, *, /, ^, tanh, σ, relu, leakyrelu, abs, exp, log, -)
 # copy for residual blocks
 
 jscall(::typeof(broadcast), ::typeof(+), a, b) = jscall(:(math.add), a, b)
-jscall(::typeof(broadcast), ::typeof(σ), x) = jscall(:(math.sigmoid), x)
+jscall(::typeof(broadcast), ::typeof(*), a, b) = jscall(:(math.mul), a, b)
+jscall(::typeof(broadcast), ::typeof(/), a, b) = jscall(:(math.div), a, b)
+jscall(::typeof(broadcast), ::typeof(^), a, b) = jscall(:(math.pow), a, b)
 jscall(::typeof(broadcast), ::typeof(tanh), x) = jscall(:(math.tanh), x)
+jscall(::typeof(broadcast), ::typeof(σ), x) = jscall(:(math.sigmoid), x)
 jscall(::typeof(broadcast), ::typeof(relu), x) = jscall(:(math.relu), x)
-jscall(::typeof(broadcast), ::typeof(*), x, y) = jscall(:(math.mul), y, x)
+jscall(::typeof(broadcast), ::typeof(leakyrelu), x) = jscall(:(math.leakyRelu), x, 0.01)
+jscall(::typeof(broadcast), ::typeof(leakyrelu), x, a) = jscall(:(math.leakyRelu), x, a)
+jscall(::typeof(broadcast), ::typeof(abs), x) = jscall(:(math.abs), x)
+jscall(::typeof(broadcast), ::typeof(exp), x) = jscall(:(math.exp), x)
+jscall(::typeof(broadcast), ::typeof(log), x) = jscall(:(math.log), x)
 jscall(::typeof(broadcast), ::typeof(-), x, y) = jscall(:(math.sub), x, y)
-jscall(::typeof(broadcast), ::typeof(/), x, y) = jscall(:(math.div), x, y)
 
 # reshape
 

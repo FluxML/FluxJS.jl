@@ -80,7 +80,7 @@ function prepare(ex, name, states = nothing)
   get_states = states == nothing? :(;) : :(model.getStates = () -> (return states);)
   quote
     model = (() -> begin
-      math = dl.ENV.math
+      math = tf;
       $(state_setup.args...)
       model = $(ex)
       $(reset_method.args...)

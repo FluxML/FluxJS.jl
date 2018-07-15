@@ -3,7 +3,7 @@
 # Flux.JS
 
 Run [Flux](https://fluxml.github.io/) models in the browser, via
-[deeplearn.js](https://deeplearnjs.org/).
+[tensorflow.js](https://js.tensorflow.org).
 
 Note that if you get errors running this package, you may need to run `Pkg.checkout("ASTInterpreter2")`.
 
@@ -23,7 +23,7 @@ julia> x = rand(10)
 
 julia> @code_js identity(x)
 let model = (function () {
-  let math = dl.ENV.math;
+  let math = tf;
   function model(kinkajou) {
     return kinkajou;
   };
@@ -53,7 +53,7 @@ julia> f(W,x) = W*x
 
 julia> @code_js f(rand(5,10),rand(10))
 let model = (function () {
-  let math = dl.ENV.math;
+  let math = tf;
   function model(bear, giraffe) {
     return math.matrixTimesVector(bear, giraffe);
   };
@@ -73,7 +73,7 @@ julia> m = Chain(Dense(10,5,relu),Dense(5,2),softmax)
 
 julia> @code_js m(x)
 let model = (function () {
-  let math = dl.ENV.math;
+  let math = tf;
   function badger(eland) {
     return math.add(math.matrixTimesVector(model.weights[0], eland), model.weights[1]);
   };
@@ -99,7 +99,7 @@ julia> m = Chain(RNN(10,5))
 
 julia> @code_js m(x)
 let model = (function () {
-  let math = dl.ENV.math;
+  let math = tf;
   let init = [0.017732, 0.00991122, -0.00712077, -0.00161244, -0.00232475];
   let states = init.slice();
   function nightingale(seal, mongoose) {
@@ -143,7 +143,7 @@ script can be found [here](lib/flux.js).
 
 ```html
 <head>
-  <script src="https://unpkg.com/deeplearn"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@0.9.0"></script>
   <script src="https://unpkg.com/bson/browser_build/bson.js"></script>
   <script src="flux.js"></script> <!-- Or embed the script directly -->
 </head>
@@ -156,7 +156,7 @@ directly. In real applications you'll most likely want to wait on the
 ```html
 <script>
 let model = (function () {
-  let math = dl.ENV.math;
+  let math = tf;
   function model(kinkajou) {
     return kinkajou;
   };
@@ -172,11 +172,11 @@ flux.fetchWeights("model.bson").then((function (ws) {
 In the page, you can run the model from the dev tools.
 
 ```js
-> x = dl.tensor([1,2,3,4,5,6,7,8,9,10])
+> x = tf.tensor([1,2,3,4,5,6,7,8,9,10])
   Tensor {isDisposed: false, size: 10, shape: Array(1), dtype: "float32", strides: Array(0), …}
 > await model(x).data()
   Float32Array(25) [0.0262143611907959, -0.04852187633514404, …]
 ```
 
-See the [deeplearn.js docs](https://deeplearnjs.org/docs/api/index.html) for
+See the [tensorflow.js docs](https://js.tensorflow.org/api/latest/index.html) for
 more information on how to work with its tensor objects.
