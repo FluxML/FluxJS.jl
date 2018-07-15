@@ -82,10 +82,10 @@ shape(::typeof(softmax), x) = shape(x)
     throw(error("Assymetric padding is unsupported by deeplearn-js")):
     pad = c.pad[1]
 
-  conv = StagedArray(conv2d, x, c.weight, padtuple(x,c.stride), pad)
-
+  y = StagedArray(conv2d, stagedinputs(x)..., c.weight, padtuple(x,c.stride), pad)
   σ, b = c.σ, reshape(c.bias, map(_->1, c.stride)..., :, 1)
-  overdub(Trace(), (x, σ, b) -> (σ).(x .+ b), conv, σ, b)
+  out = overdub(Trace(), (x) -> (σ).(x .+ b), y)
+  wrap(out, vcall(vertex(DataFlow.Lambda(1, unwrap(out))), x))
 end
 
 Base.permutedims(x::Union{StagedArray,IVertex}, p) = jscall(:(math.transpose), x, p)
@@ -94,7 +94,7 @@ Base.reverse(x::StagedArray) = jscall(:(math.transpose), x)
 # tf-js uses NHWC while js default is NCHW
 function jscall(::typeof(conv2d), x, w, s, p)
   _x = permutedims(x, to_NHWC)
-  _w = permutedims(w, [4, 3, 1, 2])
+  _w = jscall(:(math.reverse), jscall(:(math.transpose), w, :([2, 3, 1,0]), x), :([0,1]))
   _s = reverse(s)
   _out = jscall(:(math.conv2d), _x, _w, _s, p)
   permutedims(_out, to_NCHW)
