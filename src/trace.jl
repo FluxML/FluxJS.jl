@@ -1,5 +1,6 @@
-using Vinyl: @primitive, overdub
+using Vinyl: @primitive, overdub, isprimitive, primitive
 using DataFlow
+import ASTInterpreter2._Typeof
 
 struct Trace
   states::Vector{Any}
@@ -9,28 +10,37 @@ Trace() = Trace([])
 
 struct StagedArray{T,N} <: AbstractArray{T,N}
   graph::IVertex{Any}
-  dims::NTuple{N,Int}
+  val
 end
 
-Base.size(x::StagedArray) = x.dims
+Base.size(x::StagedArray) = size(val(x))
 
 Base.show(io::IO, ::MIME"text/plain", s::StagedArray) =
-  print(io, "StagedArray{$(eltype(s))}($(s.dims), $(s.graph))")
+  print(io, "StagedArray{$(eltype(s)),$(ndims(s))}($(s.val), $(s.graph))")
 
 Base.show(io::IO, s::StagedArray) =
-  print(io, "StagedArray{$(eltype(s))}($(s.dims))")
+  print(io, "StagedArray{$(eltype(s)),$(ndims(s))}")
+
+val(x) = x
+val(x::StagedArray) = val(x.val)
+val(x::Tuple) = val.(x)
+
+dims(x) = ndims(x)
+dims(x::Tuple) = length(x)
+dims(x::StagedArray) = dims(val(x))
+
+_Typeof(x) = isa(x,Type) ? Type{x} : typeof(val(x))
 
 graph(x::StagedArray) = x.graph
 graph(x) = DataFlow.constant(x)
 vcall(args...) = DataFlow.vertex(DataFlow.Call(), graph.(args)...)
 
-function StagedArray(f, args...)
-  sh = shape(f, shape.(args)...)
-  StagedArray{eltype(sh),ndims(sh)}(vcall(f, args...),sh.dims)
-end
+StagedArray(f, args...; v=val(f(val.(args)...))) =
+  StagedArray{typeof(v),dims(v)}(vcall(f, args...),v)
 
-stage(x::AbstractArray{T,N}, v) where {T,N} = StagedArray{T,N}(v, size(x))
-stage(x::Real, v) = StagedArray{typeof(x),0}(v, ())
+stage(x::AbstractArray{T,N}, v) where {T,N} = StagedArray{T,N}(v, val(x))
+stage(x::Tuple, v) = StagedArray{Tuple{eltype(x)},dims(x)}(v, val(x))
+stage(x::Real, v) = StagedArray{typeof(x),dims(x)}(v, val(x))
 stage(x, v) = error("Unsupported type $(typeof(x))")
 
 trace(f, args...; meta = Trace()) = overdub(meta, f, args...)
@@ -68,12 +78,18 @@ end
 
 control(a::IVertex, b::IVertex = DataFlow.inputnode()) = vcall(control, a, b)
 
+tensor(x::TrackedArray) = StagedArray(tensor, Flux.data(x), reverse(size(x)),v=Flux.data(x))
+tensor(x::Tuple) = tensor.(x)
+jscall(::typeof(tensor), x...) = jscall(:(math.tensor), x...)
+
 @primitive ctx::Trace function (f::Flux.Recur)(args...)
-  push!(ctx.states, f.init)
+  push!(ctx.states, tensor(f.init))
   i = length(ctx.states)-1
   states = control(DataFlow.constant(:states))
   state = stage(f.init, vcall(getindex, states, i))
-  h, y = trace(f.cell, state, stagedinputs(args...)...)
+  out = trace(f.cell, state, stagedinputs(args...)...)
+  h = trace((o) -> o[1], out)
+  y = trace((o) -> o[2], out)
   λ = vertex(DataFlow.Lambda(length(args),
                              vertex(DataFlow.Do(),
                                     vcall(setindex!, states, unwrap(h), i),
