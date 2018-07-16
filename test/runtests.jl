@@ -16,15 +16,30 @@ ex = prettify(DataFlow.syntax(traceλ(m,rand(10))))
 
 w = setupWindow()
 
+x = rand(2)
+@testset "*" begin
+    m = (x) -> ones(2, 2) * x
+    testjs(w, m, x)
+    testjs(w, m, rand(2, 1))
+end
+
+@testset "+" begin
+    m = (x) -> x + ones(2)
+    testjs(w, m, x)
+end
+
+@testset "softmax" begin
+    m = x -> softmax(x)
+    testjs(w, m, x)
+end
+
 @testset "Dense Layer" begin
-    m = Chain(Dense(10, 10))
-    x = rand(10)
+    m = Dense(2, 2)
     testjs(w, m, x)
 end
 
 @testset "broadcast" begin
-    x = rand(10)
-    b = ones(10)
+    b = ones(2)
 
     m = Chain(x -> x .+ b)
     testjs(w, m, x)
