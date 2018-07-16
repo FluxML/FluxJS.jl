@@ -14,16 +14,16 @@ ex = prettify(DataFlow.syntax(traceλ(m,rand(10))))
 
 @test @capture ex _ -> (+).(matVecMul(_,_),_)
 
-    @testset "Dense Layer" begin
-        m = Chain(Dense(10, 10))
-        x = rand(10)
-        testjs(m, x)
-    end
+@testset "Dense Layer" begin
+    m = Chain(Dense(10, 10))
+    x = rand(10)
+    testjs(m, x)
+end
 
-    @testset "broadcast" begin
-        m = Chain(x -> x .+ ones(10))
-        x = rand(10)
-        testjs(m, x)
-    end
+@testset "broadcast" begin
+    m = Chain(x -> x .+ ones(10))
+    x = rand(10)
+    testjs(m, x)
+end
 
 end
