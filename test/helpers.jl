@@ -11,12 +11,14 @@ function modeljs(model, x, result::WebIO.Observable)
         JSExpr.@var x = tf.tensor($x)
 
         model.weights = weights
-        $result[] = model(x).transpose().dataSync()
+        $result[] = model(x).dataSync()
     end)
 end
 
 function testjs(model, x)
-    w = Blink.Window(Dict(:show => false))
+    # w = Blink.Window(Dict(:show => false))
+    w = Blink.Window(Dict())
+    opentools(w)
     Blink.body!(w, dom"div"())
     sleep(5)
 
@@ -34,22 +36,20 @@ function testjs(model, x)
     mjs = modeljs(model, x, r)
     onimport(s, mjs)
 
-    p = x -> round(x, 5)
-
     on(r) do o
         put!(output, o)
     end
     Blink.body!(w, s)
 
-    sleep(5)
-    res = Flux.data(model(x))
+    sleep(1)
+    res = [Flux.data(model(x))...]
     o = take!(output)
     resjs = Array{eltype(res),1}(length(o))
     for i in keys(o)
         resjs[parse(i) + 1] = o[i]
     end
 
-    @test p.(res) == p.(resjs)
+    @test all(x -> x, abs.(res .- resjs) .< 10.0^(-5))
 end
 
 loadseq(w) = nothing
@@ -68,6 +68,6 @@ end
 
 function loadseq(w, config, args...)
     loadseq(w, config)
-    sleep(5)
+    sleep(1)
     loadseq(w, args...)
 end
