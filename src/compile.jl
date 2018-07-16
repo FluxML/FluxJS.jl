@@ -77,12 +77,14 @@ function prepare(ex, name, states = nothing)
     :(init = $states; states = init.slice())
   reset_method = states == nothing ? :(;) :
     :(model.reset = () -> (global states = init.slice(); return);)
+  get_states = states == nothing? :(;) : :(model.getStates = () -> (return states);)
   quote
     model = (() -> begin
       math = tf;
       $(state_setup.args...)
       model = $(ex)
       $(reset_method.args...)
+      $(get_states.args...)
       model.weights = []
       model
     end)()
