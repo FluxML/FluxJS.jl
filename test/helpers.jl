@@ -15,20 +15,7 @@ function modeljs(model, x, result::WebIO.Observable)
     end)
 end
 
-function testjs(model, x)
-    # w = Blink.Window(Dict(:show => false))
-    w = Blink.Window(Dict())
-    opentools(w)
-    Blink.body!(w, dom"div"())
-    sleep(5)
-
-    libs = [
-        "//unpkg.com/bson@2.0.8/browser_build/bson.js",
-        "//cdnjs.cloudflare.com/ajax/libs/tensorflow/0.11.7/tf.js"]
-    fluxjs = [normpath("$(@__DIR__)/../lib/flux.js")]
-
-    loadseq(w, Dict("files"=>libs, "names"=>["BSON", "tf"]), Dict("files"=>fluxjs, "names"=>["fluxjs"]))
-
+function testjs(w, model, x)
     s = Scope()
     r = Observable(s, "result", Dict())
     output = Channel{Dict}(1)
@@ -70,4 +57,18 @@ function loadseq(w, config, args...)
     loadseq(w, config)
     sleep(1)
     loadseq(w, args...)
+end
+
+function setupWindow()
+    w = Blink.Window(Dict(:show => false))
+    Blink.body!(w, dom"div"())
+    sleep(5)
+
+    libs = [
+        "//unpkg.com/bson@2.0.8/browser_build/bson.js",
+        "//cdnjs.cloudflare.com/ajax/libs/tensorflow/0.11.7/tf.js"]
+    fluxjs = [normpath("$(@__DIR__)/../lib/flux.js")]
+
+    loadseq(w, Dict("files"=>libs, "names"=>["BSON", "tf"]), Dict("files"=>fluxjs, "names"=>["fluxjs"]))
+    return w
 end
