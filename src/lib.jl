@@ -52,7 +52,7 @@ jscall(::typeof(softmax), x) = jscall(:(math.softmax), x)
     throw(error("Assymetric padding is unsupported by deeplearn-js")):
     pad = c.pad[1]
 
-  y = StagedArray(conv2d, stagedinputs(x)..., c.weight, padtuple(x,c.stride), pad)
+  y = StagedArray(conv2d, stagedinputs(x)..., c.weight, padtuple(x,c.stride), pad, v=out)
   σ, b = c.σ, reshape(c.bias, map(_->1, c.stride)..., :, 1)
   out = overdub(Trace(), (x) -> (σ).(x .+ b), y)
   wrap(out, vcall(vertex(DataFlow.Lambda(1, unwrap(out))), x))
