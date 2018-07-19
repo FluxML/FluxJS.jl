@@ -28,6 +28,14 @@ end
     testjs(w, m, x)
 end
 
+@testset "vcat" begin
+    m = (x) -> vcat(x, ones(2))
+    testjs(w, m, x)
+
+    m = (x) -> vcat(x, ones(2, 2))
+    testjs(w, m, rand(3, 2))
+end
+
 @testset "softmax" begin
     m = x -> softmax(x)
     testjs(w, m, x)

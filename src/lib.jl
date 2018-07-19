@@ -35,7 +35,7 @@ concat(a, b) = vcat(a, b)
 @primitive Trace vcat(a::AbstractMatrix, b::AbstractMatrix) =
   StagedArray(concat, a, b)
 
-jscall(::typeof(concat1D), a, b) = jscall(:(math.concat1d), a, b)
+jscall(::typeof(concat1D), a, b) = jscall(:(math.concat1d), jscall(tuple,a, b))
 jscall(::typeof(concat), a, b) = jscall(:(math.concat), jscall(tuple, a, b), -1)
 
 # softmax
