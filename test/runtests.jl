@@ -78,6 +78,18 @@ end
     testjs(w, m, x)
 end
 
+@testset "Conv" begin
+    m = Chain(Conv((2, 2), 2=>2))
+    x = rand(2,2,2,2)
+    testjs(w, m, x)
+end
+
+@testset "maxpool" begin
+    m = Chain(Conv((2, 2), 2=>2), x -> maxpool(x, (2, 2)))
+    x = rand(4,4,2,2)
+    testjs(w, m, x)
+end
+
 @testset "BatchNorm" begin
     m = Chain(BatchNorm(10))
     Flux.testmode!(m)

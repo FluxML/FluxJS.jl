@@ -66,7 +66,7 @@ function jscall(::typeof(conv2d), x, w, s, p)
   _x = permutedims(x, to_NHWC)
   _w = jscall(:(math.reverse), jscall(:(math.transpose), w, :([2, 3, 1,0]), x), :([0,1]))
   _s = reverse(s)
-  _out = jscall(:(math.conv2d), _x, _w, _s, p)
+  _out = jscall(:(math.conv2d), _x, _w, _s, p, "NHWC", :([1, 1]), "floor")
   permutedims(_out, to_NCHW)
 end
 
@@ -86,7 +86,7 @@ function jscall(::typeof(maxpool), x, k, pad, stride)
   _x = permutedims(x, to_NHWC)
   _k = reverse(k)
   _s = reverse(stride)
-  _out = jscall(:(math.maxPool), _x, _k, _s, pad)
+  _out = jscall(:(math.maxPool), _x, _k, _s, pad, "floor")
   permutedims(_out, to_NCHW)
 end
 
