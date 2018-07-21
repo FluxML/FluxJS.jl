@@ -27,14 +27,16 @@ jscall(::typeof(+), a, b) = jscall(:(math.add), b, a)
 # cat
 
 concat1D(a, b) = vcat(a, b)
+concat(a, b) = vcat(a, b)
 
 @primitive Trace vcat(a::AbstractVector, b::AbstractVector) =
   StagedArray(concat1D, a, b)
 
 @primitive Trace vcat(a::AbstractMatrix, b::AbstractMatrix) =
-  error("concat2D not implemented")
+  StagedArray(concat, a, b)
 
-jscall(::typeof(concat1D), a, b) = jscall(:(math.concat1D), a, b)
+jscall(::typeof(concat1D), a, b) = jscall(:(math.concat1d), jscall(tuple,a, b))
+jscall(::typeof(concat), a, b) = jscall(:(math.concat), jscall(tuple, a, b), -1)
 
 # softmax
 
