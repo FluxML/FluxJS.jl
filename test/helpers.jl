@@ -51,11 +51,11 @@ function loadseq(w, config)
         end)
     end)
     Blink.body!(w, s)
+    sleep(1)
 end
 
 function loadseq(w, config, args...)
     loadseq(w, config)
-    sleep(1)
     loadseq(w, args...)
 end
 
