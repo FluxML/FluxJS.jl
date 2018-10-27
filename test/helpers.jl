@@ -9,34 +9,40 @@ function modeljs(model, x, result::WebIO.Observable)
             tf.tensor(e)
         end)
         JSExpr.@var x = tf.tensor($x)
-
         model.weights = weights
         $result[] = model(x).dataSync()
     end)
+end
+
+function Base.take!(o::Channel,timeout::Int)
+    @async begin
+        sleep(timeout)
+        return nothing
+    end
+    return take!(o)
+end
+
+function compare(res, out)
+    out == nothing && return false
+    resjs = Array{eltype(res),1}(undef, length(out))
+    for i in keys(out)
+        resjs[Main.parse(i) + 1] = out[i]
+    end
+    return all(x -> x, abs.(res .- resjs) .< 10.0^(-5))
 end
 
 function testjs(w, model, x)
     s = Scope()
     r = Observable(s, "result", Dict())
     output = Channel{Dict}(1)
-
     mjs = modeljs(model, x, r)
     onimport(s, mjs)
-
     on(r) do o
         put!(output, o)
     end
     Blink.body!(w, s)
-
-    sleep(1)
     res = [Flux.data(model(x))...]
-    o = take!(output)
-    resjs = Array{eltype(res),1}(length(o))
-    for i in keys(o)
-        resjs[parse(i) + 1] = o[i]
-    end
-
-    @test all(x -> x, abs.(res .- resjs) .< 10.0^(-5))
+    @test compare(res, take!(output, 1))
 end
 
 loadseq(w) = nothing
@@ -51,7 +57,6 @@ function loadseq(w, config)
         end)
     end)
     Blink.body!(w, s)
-    sleep(1)
 end
 
 function loadseq(w, config, args...)
@@ -61,14 +66,10 @@ end
 
 function setupWindow()
     w = Blink.Window(Dict(:show => false))
-    Blink.body!(w, dom"div"())
-    sleep(5)
-
     libs = [
         "//unpkg.com/bson@2.0.8/browser_build/bson.js",
         "//cdnjs.cloudflare.com/ajax/libs/tensorflow/0.11.7/tf.js"]
     fluxjs = [normpath("$(@__DIR__)/../lib/flux.js")]
-
     loadseq(w, Dict("files"=>libs, "names"=>["BSON", "tf"]), Dict("files"=>fluxjs, "names"=>["fluxjs"]))
     return w
 end

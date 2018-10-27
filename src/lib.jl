@@ -3,6 +3,7 @@ using Vinyl: primitive
 
 const to_NCHW = :([0, 3, 1, 2])
 const to_NHWC = :([0, 2, 3, 1])
+const IntDims = dims(one(Int))
 
 # Library of mathematical functions we consider primitive.
 # TODO: store Julia functions and types, to avoid tensorflow.js-specific functions
@@ -50,11 +51,11 @@ jscall(::typeof(softmax), x) = jscall(:(math.softmax), x)
 @primitive Trace function (c::Conv)(x)
   out = conv(val(x), c.weight, stride = c.stride, pad = c.pad)
   pad = 0
-  !all(x-> x == c.pad[1], c.pad)?
-    throw(error("Assymetric padding is unsupported by deeplearn-js")):
+  !all(x-> x == c.pad[1], c.pad) ?
+    throw(error("Assymetric padding is unsupported by deeplearn-js")) :
     pad = c.pad[1]
 
-  y = StagedArray(conv2d, stagedinputs(x)..., c.weight, padtuple(x,c.stride), pad, v=out)
+  y = StagedArray(conv2d, stagedinputs(x)..., c.weight, padtuple(val(x),c.stride), pad, v=out)
   σ, b = c.σ, reshape(c.bias, map(_->1, c.stride)..., :, 1)
   out = overdub(Trace(), (x) -> (σ).(x .+ b), y)
   wrap(out, vcall(vertex(DataFlow.Lambda(1, unwrap(out))), x))
@@ -77,8 +78,8 @@ end
 @primitive Trace function maxpool(x::AbstractArray, k; pad = map(_->0,k), stride = k)
   out = maxpool(val(x), k, pad=pad, stride=stride)
 
-  !all(x-> x == pad[1], pad)?
-    throw(error("Assymetric padding is unsupported by deeplearn-js")):
+  !all(x-> x == pad[1], pad) ?
+    throw(error("Assymetric padding is unsupported by deeplearn-js")) :
     pad = pad[1]
 
   StagedArray(maxpool, x, k, pad, stride, v=out)
@@ -149,7 +150,6 @@ jscall(::typeof(reshape), p, dims...) =
   end
 
 # gate ( for LSTM and GRU )
-
 @primitive ctx::Trace function Flux.gate(x::AbstractArray, h, n)
   out = Flux.gate(val(x), val(h), val(n))
   _start =  overdub(Trace(), (h, n) -> h * (n-1), h, n)
@@ -159,35 +159,28 @@ end
 jscall(::typeof(view), x, start, length) =
   jscall(:(math.slice), x, start, length)
 
-@primitive Trace start(x::StagedArray) = StagedArray(start, x)
-jscall(::typeof(start), x) = DataFlow.constant(0)
-
 @primitive Trace Base.getfield(x, i) =
   ! any(x -> x isa StagedArray, (x, i)) ?
   trace(getfield, x, i) :
   StagedArray(getindex, x, "$i", v=getfield(val(x), val(i)))
 
-@primitive Trace Base.getfield(x::StagedArray, i::Union{StagedArray{Int,0},Int}) =
+@primitive Trace Base.getfield(x::StagedArray, i::Union{StagedArray{Int,IntDims},Int}) =
   StagedArray(getindex, x, primitive(Trace(), -, i, 1), v=getfield(val(x), val(i)))
 
-@primitive Trace Base.getfield(x, i::StagedArray{Int,0}) =
+@primitive Trace Base.getfield(x, i::StagedArray{Int,IntDims}) =
   StagedArray(getindex, x, primitive(Trace(), -, i, 1), v=getfield(val(x), val(i)))
-
-@primitive Trace Base.indexed_next(x::StagedArray, i, state) =
-  StagedArray(tuple, primitive(Trace(), getindex, x, i), primitive(Trace(), +, state, 1))
 
 Base.getindex(x::StagedArray, i) = StagedArray(getindex, x, i - 1, v=getindex(val(x), i)) # for splat operator to work
 
 @primitive Trace Base.getindex(t::StagedArray, i::Int) =
   StagedArray(getindex, t, i - 1, v = val(t)[i])
 
-@primitive Trace function Base.getindex(t, i::StagedArray{Int,0})
+@primitive Trace function Base.getindex(t, i::StagedArray{Int,IntDims})
   index = overdub(Trace(), x -> x - 1, i)
   StagedArray(getindex, t, i, v = val(t)[val(i)])
 end
 
-@primitive Trace tuple(args...) =
-  any(x -> x isa StagedArray, args) ? StagedArray(tuple, args...) : trace(tuple, args...)
+@primitive Trace tuple(args...) = args
 
 add(x, y) = x + y
 sub(x, y) = x - y
@@ -196,9 +189,9 @@ div(x, y) = x / y
 
 # for StagedArray{Int}
 function binary_op(op, sub)
-  @eval @primitive Trace ($op)(x::T, y::T) where {T<:StagedArray{<:Number,0}} = StagedArray($sub, x, y)
-  @eval @primitive Trace ($op)(x::T, y::S) where {T<:StagedArray{S,0}} where {S<:Number} = StagedArray($sub, x, y)
-  @eval @primitive Trace ($op)(x::S, y::T) where {T<:StagedArray{S,0}} where {S<:Number} = StagedArray($sub, x, y)
+  @eval @primitive Trace ($op)(x::T, y::T) where {T<:StagedArray{<:Number,IntDims}} = StagedArray($sub, x, y)
+  @eval @primitive Trace ($op)(x::T, y::S) where {T<:StagedArray{S,IntDims}} where {S<:Number} = StagedArray($sub, x, y)
+  @eval @primitive Trace ($op)(x::S, y::T) where {T<:StagedArray{S,IntDims}} where {S<:Number} = StagedArray($sub, x, y)
 end
 
 binary_op(+, add)
@@ -268,15 +261,12 @@ jscall(::typeof(onesArr), t, i) = jscall(:([].fill.apply), jscall(:(Array), i), 
 
 jscall(::typeof(copy), A) = jscall(:(flux.slice), A)
 
-@primitive Trace function mean(A::StagedArray, i)
-  index, _ = invertedindex(A, i)
-  StagedArray(mean, A, index, true, v=mean(val(A), val(i)))
-end
-
-jscall(::typeof(mean), x...) = jscall(:(math.mean), x...)
-
 function invertedindex(x::AbstractArray, i)
   _size = trace((x) -> size(x), x)
   index = trace((s, i)-> (length(s) - i), _size ,i)
   return index, _size
 end
+
+@primitive Trace Base.iterate(x::StagedArray{T,N}) where {T,N} = StagedArray(iterate, x)
+@primitive Trace Base.iterate(x::StagedArray{T,N}, state) where {T,N} = StagedArray(iterate, x, state)
+jscall(::typeof(iterate), args...) = jscall(:(flux.iterate), args...)

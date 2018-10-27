@@ -52,9 +52,9 @@ end
 
 function jsexpr(io::IO, x; level = 0)
   if isexpr(x, :block)
-    for x in x.args
+    for xe in x.args
       print(io, "  "^level)
-      jsexpr(io, x, level = level)
+      jsexpr(io, xe, level = level)
       println(io, ";")
     end
   elseif isexpr(x, :(=))
@@ -84,7 +84,9 @@ function jsexpr(io::IO, x; level = 0)
     jsexpr(io, x.args[1], level = level)
   elseif isexpr(x, :ref)
     jsexpr(io, x.args[1])
-    print(io, "[$(x.args[2])]")
+    print(io, "[")
+    jsexpr(io, x.args[2])
+    print(io, "]")
   else
     print(io, x)
   end

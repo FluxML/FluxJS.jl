@@ -25,11 +25,9 @@ val(x) = x
 val(x::StagedArray) = val(x.val)
 val(x::Tuple) = val.(x)
 
-dims(x) = ndims(x)
-dims(x::Tuple) = length(x)
+dims(x) = length(x)
+dims(x::AbstractArray) = ndims(x)
 dims(x::StagedArray) = dims(val(x))
-
-_Typeof(x) = isa(x,Type) ? Type{x} : typeof(val(x))
 
 graph(x::StagedArray) = x.graph
 graph(x) = DataFlow.constant(x)
@@ -87,9 +85,7 @@ jscall(::typeof(tensor), x...) = jscall(:(math.tensor), x...)
   i = length(ctx.states)-1
   states = control(DataFlow.constant(:states))
   state = stage(f.init, vcall(getindex, states, i))
-  out = trace(f.cell, state, stagedinputs(args...)...)
-  h = trace((o) -> o[1], out)
-  y = trace((o) -> o[2], out)
+  h, y = trace(f.cell, state, stagedinputs(args...)...)
   λ = vertex(DataFlow.Lambda(length(args),
                              vertex(DataFlow.Do(),
                                     vcall(setindex!, states, unwrap(h), i),
@@ -98,7 +94,7 @@ jscall(::typeof(tensor), x...) = jscall(:(math.tensor), x...)
 end
 
 struct BTrace end
-@primitive Trace (::typeof(broadcast))(f, args...) = overdub(BTrace(), () -> f(args...))
+@primitive Trace (::typeof(Base.Broadcast.broadcasted))(f, args...) = overdub(BTrace(), () -> f(args...))
 
 bcast_ndims(args...) = maximum(arg isa AbstractArray ? ndims(arg) : 0 for arg in args)
 
