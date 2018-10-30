@@ -12,7 +12,7 @@ m = Dense(10,5)
 v = traceλ(m, rand(10))
 ex = prettify(DataFlow.syntax(v))
 
-@test @capture ex _ -> (_)((+).(matVecMul(_,_),_))
+@test @capture ex _ -> (+).(matVecMul(_,_),_)
 
 w = setupWindow()
 

@@ -1,6 +1,5 @@
 using Vinyl: @primitive, overdub, isprimitive, primitive
 using DataFlow
-import ASTInterpreter2._Typeof
 
 struct Trace
   states::Vector{Any}
@@ -76,12 +75,8 @@ end
 
 control(a::IVertex, b::IVertex = DataFlow.inputnode()) = vcall(control, a, b)
 
-tensor(x::TrackedArray) = StagedArray(tensor, Flux.data(x), reverse(size(x)),v=Flux.data(x))
-tensor(x::Tuple) = tensor.(x)
-jscall(::typeof(tensor), x...) = jscall(:(math.tensor), x...)
-
 @primitive ctx::Trace function (f::Flux.Recur)(args...)
-  push!(ctx.states, tensor(f.init))
+  push!(ctx.states, f.init)
   i = length(ctx.states)-1
   states = control(DataFlow.constant(:states))
   state = stage(f.init, vcall(getindex, states, i))
@@ -95,6 +90,7 @@ end
 
 struct BTrace end
 @primitive Trace (::typeof(Base.Broadcast.broadcasted))(f, args...) = overdub(BTrace(), () -> f(args...))
+@primitive Trace (::typeof(Base.Broadcast.materialize))(bc) = bc
 
 bcast_ndims(args...) = maximum(arg isa AbstractArray ? ndims(arg) : 0 for arg in args)
 
