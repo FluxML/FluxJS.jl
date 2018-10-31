@@ -1,6 +1,6 @@
 function modeljs(model, x, result::WebIO.Observable)
     code, weights = FluxJS.compile(model, x)
-    code = join(split(code, "\n")[1:end-4],"\n") # remove fetch statement
+    code = join(split(code, "\n")[1:end-2],"\n") # remove fetch statement
     code = WebIO.JSString(code)
 
     JSExpr.@js (() -> begin
@@ -9,7 +9,7 @@ function modeljs(model, x, result::WebIO.Observable)
             tf.tensor(e)
         end)
         JSExpr.@var x = tf.tensor($x)
-        model.weights = weights
+        model.setWeights(weights)
         $result[] = model(x).dataSync()
     end)
 end
@@ -17,7 +17,7 @@ end
 function Base.take!(o::Channel,timeout::Int)
     @async begin
         sleep(timeout)
-        return nothing
+        put!(o, nothing)
     end
     return take!(o)
 end
@@ -34,7 +34,7 @@ end
 function testjs(w, model, x)
     s = Scope()
     r = Observable(s, "result", Dict())
-    output = Channel{Dict}(1)
+    output = Channel{Any}(1)
     mjs = modeljs(model, x, r)
     onimport(s, mjs)
     on(r) do o
@@ -42,7 +42,7 @@ function testjs(w, model, x)
     end
     Blink.body!(w, s)
     res = [Flux.data(model(x))...]
-    @test compare(res, take!(output, 1))
+    @test compare(res, take!(output, 5))
 end
 
 loadseq(w) = nothing
