@@ -1,4 +1,4 @@
-using Vinyl: @primitive, overdub, isprimitive, primitive
+using Vinyl: @primitive, overdub, primitive
 using DataFlow
 
 struct Trace

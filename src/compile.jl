@@ -1,5 +1,3 @@
-using DataFlow
-
 struct Meth
   func
   args::Tuple

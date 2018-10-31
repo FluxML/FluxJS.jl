@@ -26,7 +26,7 @@ function compare(res, out)
     out == nothing && return false
     resjs = Array{eltype(res),1}(undef, length(out))
     for i in keys(out)
-        resjs[Main.parse(i) + 1] = out[i]
+        resjs[Main.parse(Int, i) + 1] = out[i]
     end
     return all(x -> x, abs.(res .- resjs) .< 10.0^(-5))
 end
@@ -42,7 +42,7 @@ function testjs(w, model, x)
     end
     Blink.body!(w, s)
     res = [Flux.data(model(x))...]
-    @test compare(res, take!(output, 5))
+    @test compare(res, take!(output, 1))
 end
 
 loadseq(w) = nothing

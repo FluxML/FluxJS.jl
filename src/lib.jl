@@ -1,5 +1,4 @@
-using NNlib: cdims, padtuple, pdims, conv
-using Vinyl: primitive
+using NNlib: padtuple, conv
 
 const to_NCHW = :([0, 3, 1, 2])
 const to_NHWC = :([0, 2, 3, 1])
