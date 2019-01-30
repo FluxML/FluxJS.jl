@@ -1,4 +1,4 @@
-using Vinyl: @primitive, overdub, primitive
+using Vinyl: @primitive, overdub, primitive, @hook
 using DataFlow
 
 struct Trace
@@ -88,9 +88,31 @@ control(a::IVertex, b::IVertex = DataFlow.inputnode()) = vcall(control, a, b)
   wrap(y, vcall(λ, args...))
 end
 
+# Base.Broadcast.broadcasted(::Type{T}, x::Type{StagedArray{T,N}}) where {T,N} = x
+# Base.Broadcast.broadcasted(::Type{T}, x::Type{StagedArray{S,N}}) where {T,S,N} =
+
+# @primitive BTrace (::Type{T})(arg) where T =
+#   isa(arg, Type{StagedArray}) ?
+
+
 struct BTrace end
-@primitive Trace (::typeof(Base.Broadcast.broadcasted))(f, args...) = overdub(BTrace(), () -> f(args...))
-@primitive Trace (::typeof(Base.Broadcast.materialize))(bc) = bc
+@primitive Trace function (::typeof(Base.Broadcast.broadcasted))(f, args...)
+  println("ggggg")
+  overdub(BTrace(), () -> f(args...))
+end
+
+# don't record type conversions
+@primitive Trace function (::typeof(Base.Broadcast.broadcasted))(f::Type{T}, x::StagedArray) where {T<:Number}
+  v = val(f).(val(x))
+  StagedArray{eltype(v),dims(v)}(graph(x), v)
+end
+
+# @primitive Trace function (::typeof(Base.Broadcast.broadcasted))(f::Type{T}, arg::StagedArray{F,N}) where {T, F, N}
+#   println("yup $f $arg")
+#   StagedArray(graph(arg), val(f).(val(arg)))
+# end
+# @primitive Trace (::typeof(Base.Broadcast.materialize))(bc) = bc
+@primitive Trace (::typeof(broadcast))(f, args...) = overdub(BTrace(), () -> f(args...))
 
 bcast_ndims(args...) = maximum(arg isa AbstractArray ? ndims(arg) : 0 for arg in args)
 
@@ -99,3 +121,7 @@ function bcastable(op)
 end
 
 bcastable(op, ops...) = (bcastable(op); bcastable(ops...))
+
+# @hook c::Any (f::Any)(args...) = println("($f)$(val.(args))")
+
+# convert(A, x::StagedArray{T,N}) where {T,N} = StagedArray{A,N}(graph(x), convert(A, val(x)))

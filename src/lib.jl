@@ -54,7 +54,7 @@ jscall(::typeof(softmax), x) = jscall(:(math.softmax), x)
     throw(error("Assymetric padding is unsupported by deeplearn-js")) :
     pad = c.pad[1]
 
-  y = StagedArray(conv2d, stagedinputs(x)..., c.weight, padtuple(val(x),c.stride), pad, v=out)
+  y = StagedArray(conv, stagedinputs(x)..., c.weight, padtuple(val(x),c.stride), pad, v=out)
   σ, b = c.σ, reshape(c.bias, map(_->1, c.stride)..., :, 1)
   out = overdub(Trace(), (x) -> (σ).(x .+ b), y)
   wrap(out, vcall(vertex(DataFlow.Lambda(1, unwrap(out))), x))
@@ -64,7 +64,7 @@ Base.permutedims(x::Union{StagedArray,IVertex}, p) = jscall(:(math.transpose), x
 Base.reverse(x::StagedArray) = jscall(:(math.transpose), x)
 
 # tf-js uses NHWC while js default is NCHW
-function jscall(::typeof(conv2d), x, w, s, p)
+function jscall(::typeof(conv), x, w, s, p)
   _x = permutedims(x, to_NHWC)
   _w = jscall(:(math.reverse), jscall(:(math.transpose), w, :([2, 3, 1,0]), x), :([0,1]))
   _s = reverse(s)
@@ -169,7 +169,8 @@ jscall(::typeof(view), x, start, length) =
 @primitive Trace Base.getfield(x, i::StagedArray{Int,IntDims}) =
   StagedArray(getindex, x, primitive(Trace(), -, i, 1), v=getfield(val(x), val(i)))
 
-Base.getindex(x::StagedArray, i) = StagedArray(getindex, x, i - 1, v=getindex(val(x), i)) # for splat operator to work
+Base.getindex(x::StagedArray, i) = StagedArray(getindex, x, i - 1, v=getindex(val(x), i))
+# Base.getindex(x::StagedArray, i::Int) = StagedArray(getindex, x, i - 1, v=getindex(val(x), i))
 
 @primitive Trace Base.getindex(t::StagedArray, i::Int) =
   StagedArray(getindex, t, i - 1, v = val(t)[i])
