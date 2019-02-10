@@ -32,7 +32,9 @@ graph(x::StagedArray) = x.graph
 graph(x) = DataFlow.constant(x)
 vcall(args...) = DataFlow.vertex(DataFlow.Call(), graph.(args)...)
 
-StagedArray(f, args...; v=val(f(val.(args)...))) =
+eval_(f, args) = val(f(val.(args)...))
+
+StagedArray(f, args...; v=eval_(f, args)) =
   StagedArray{typeof(v),dims(v)}(vcall(f, args...),v)
 
 stage(x::AbstractArray{T,N}, v) where {T,N} = StagedArray{T,N}(v, val(x))
@@ -73,6 +75,19 @@ end
     tracecall(f, args..., meta = ctx)
 end
 
+# struct Bag{N} <: AbstractArray{Int,N}
+#   arg
+#   ctx
+# end
+#
+# Base.size(b::Bag) = size(b.arg)
+#
+# (f::Dense)(b::Bag) = trace(f, b.arg, meta = b.ctx)
+#
+# @primitive ctx::Trace function (f::typeof(invoke))(foo::Dense, argtypes, arg::StagedArray{T,N}) where {T,N}
+#   trace(foo, Bag{N}(arg, ctx), meta = ctx)
+# end
+
 control(a::IVertex, b::IVertex = DataFlow.inputnode()) = vcall(control, a, b)
 
 @primitive ctx::Trace function (f::Flux.Recur)(args...)
@@ -97,7 +112,6 @@ end
 
 struct BTrace end
 @primitive Trace function (::typeof(Base.Broadcast.broadcasted))(f, args...)
-  println("ggggg")
   overdub(BTrace(), () -> f(args...))
 end
 
@@ -121,7 +135,3 @@ function bcastable(op)
 end
 
 bcastable(op, ops...) = (bcastable(op); bcastable(ops...))
-
-# @hook c::Any (f::Any)(args...) = println("($f)$(val.(args))")
-
-# convert(A, x::StagedArray{T,N}) where {T,N} = StagedArray{A,N}(graph(x), convert(A, val(x)))

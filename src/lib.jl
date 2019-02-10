@@ -48,13 +48,13 @@ jscall(::typeof(softmax), x) = jscall(:(math.softmax), x)
 # conv2d
 
 @primitive Trace function (c::Conv)(x)
-  out = conv(val(x), c.weight, stride = c.stride, pad = c.pad)
+  out = conv(val(x), c.weight, pad = c.pad, stride = c.stride, dilation = c.dilation)
   pad = 0
   !all(x-> x == c.pad[1], c.pad) ?
     throw(error("Assymetric padding is unsupported by deeplearn-js")) :
     pad = c.pad[1]
 
-  y = StagedArray(conv, stagedinputs(x)..., c.weight, padtuple(val(x),c.stride), pad, v=out)
+  y = StagedArray(conv, stagedinputs(x)..., c.weight, padtuple(val(x),c.stride), pad, padtuple(val(x),c.dilation), v=out)
   σ, b = c.σ, reshape(c.bias, map(_->1, c.stride)..., :, 1)
   out = overdub(Trace(), (x) -> (σ).(x .+ b), y)
   wrap(out, vcall(vertex(DataFlow.Lambda(1, unwrap(out))), x))
@@ -64,11 +64,12 @@ Base.permutedims(x::Union{StagedArray,IVertex}, p) = jscall(:(math.transpose), x
 Base.reverse(x::StagedArray) = jscall(:(math.transpose), x)
 
 # tf-js uses NHWC while js default is NCHW
-function jscall(::typeof(conv), x, w, s, p)
+function jscall(::typeof(conv), x, w, s, p, d)
   _x = permutedims(x, to_NHWC)
   _w = jscall(:(math.reverse), jscall(:(math.transpose), w, :([2, 3, 1,0]), x), :([0,1]))
   _s = reverse(s)
-  _out = jscall(:(math.conv2d), _x, _w, _s, p, "NHWC", :([1, 1]), "floor")
+  _d = reverse(d)
+  _out = jscall(:(math.conv2d), _x, _w, _s, p, "NHWC", _d, "floor")
   permutedims(_out, to_NCHW)
 end
 
@@ -140,15 +141,23 @@ jscall(::typeof(reshape), p, dims...) =
 @primitive Trace Base.size(x::StagedArray) =
   StagedArray(getindex, x, :(String("shape")), v=size(val(x)))
 
-@primitive Trace Base.size(x, i) =
+@primitive ctx::Trace Base.size(x, i) =
   ! any(x -> x isa StagedArray, (x, i)) ?
   trace(size, x, i) :
   begin
-    index, _size = invertedindex(x, i)
-    StagedArray(getindex, _size, index, v=size(val(x))[val(i)])
+    if x isa StagedArray
+      _size = tracecall((x) -> size(x), x, meta=ctx)
+    else
+      _size = size(x)
+    end
+    StagedArray(js_invindex, _size, i, v=size(val(x))[val(i)])
   end
+  # begin
+  #   index, _size = invertedindex(x, i)
+  #   StagedArray(getindex, _size, index, v=size(val(x))[val(i)])
+  # end
 
-# gate ( for LSTM and GRU )
+# # gate ( for LSTM and GRU )
 @primitive ctx::Trace function Flux.gate(x::AbstractArray, h, n)
   out = Flux.gate(val(x), val(h), val(n))
   _start =  overdub(Trace(), (h, n) -> h * (n-1), h, n)
@@ -158,30 +167,43 @@ end
 jscall(::typeof(view), x, start, length) =
   jscall(:(math.slice), x, start, length)
 
-@primitive Trace Base.getfield(x, i) =
-  ! any(x -> x isa StagedArray, (x, i)) ?
-  trace(getfield, x, i) :
-  StagedArray(getindex, x, "$i", v=getfield(val(x), val(i)))
+# @primitive Trace Base.getfield(x, i) =
+#   ! any(x -> x isa StagedArray, (x, i)) ?
+#   trace(getfield, x, i) :
+#   StagedArray(getindex, x, "$i", v=getfield(val(x), val(i)))
+#
+# @primitive Trace Base.getfield(x::StagedArray, i::Union{StagedArray{Int,IntDims},Int}) =
+#   StagedArray(getindex, x, primitive(Trace(), -, i, 1), v=getfield(val(x), val(i)))
+#
+# @primitive Trace Base.getfield(x, i::StagedArray{Int,IntDims}) =
+#   StagedArray(getindex, x, primitive(Trace(), -, i, 1), v=getfield(val(x), val(i)))
 
-@primitive Trace Base.getfield(x::StagedArray, i::Union{StagedArray{Int,IntDims},Int}) =
-  StagedArray(getindex, x, primitive(Trace(), -, i, 1), v=getfield(val(x), val(i)))
 
-@primitive Trace Base.getfield(x, i::StagedArray{Int,IntDims}) =
-  StagedArray(getindex, x, primitive(Trace(), -, i, 1), v=getfield(val(x), val(i)))
+Base.getindex(x::StagedArray, i...) =
+  StagedArray(js_getindex, x, i...)
 
-Base.getindex(x::StagedArray, i) = StagedArray(getindex, x, i - 1, v=getindex(val(x), i))
-# Base.getindex(x::StagedArray, i::Int) = StagedArray(getindex, x, i - 1, v=getindex(val(x), i))
+js_getindex(x, i...) = getindex(x, i...)
+jscall(::typeof(js_getindex), x, i...) =
+  jscall(:(flux.getindex), x, i...)
 
-@primitive Trace Base.getindex(t::StagedArray, i::Int) =
-  StagedArray(getindex, t, i - 1, v = val(t)[i])
+js_invindex(x, i...) = getindex(x, i...)
+jscall(::typeof(js_invindex), x, i...) =
+  jscall(:(flux.invindex), x, i...)
 
-@primitive Trace function Base.getindex(t, i::StagedArray{Int,IntDims})
-  index = overdub(Trace(), x -> x - 1, i)
-  StagedArray(getindex, t, i, v = val(t)[val(i)])
-end
 
-@primitive Trace tuple(args...) = args
-
+# Base.getindex(x::StagedArray, i) = StagedArray(getindex, x, i - 1, v=getindex(val(x), i))
+# # Base.getindex(x::StagedArray, i::Int) = StagedArray(getindex, x, i - 1, v=getindex(val(x), i))
+#
+# @primitive Trace Base.getindex(t::StagedArray, i::Int) =
+#   StagedArray(getindex, t, i - 1, v = val(t)[i])
+#
+# @primitive Trace function Base.getindex(t, i::StagedArray{Int,IntDims})
+#   index = overdub(Trace(), x -> x - 1, i)
+#   StagedArray(getindex, t, i, v = val(t)[val(i)])
+# end
+#
+# @primitive Trace tuple(args...) = args
+#
 add(x, y) = x + y
 sub(x, y) = x - y
 mul(x, y) = x * y
@@ -203,59 +225,59 @@ jscall(::typeof(add), x, y) = jscall(:(+), x, y)
 jscall(::typeof(sub), x, y) = jscall(:(-), x, y)
 jscall(::typeof(mul), x, y) = jscall(:(*), x, y)
 jscall(::typeof(div), x, y) = jscall(:(/), x, y)
-
-@primitive Trace function (BN::BatchNorm)(x)
-  μ, σ, γ, β, λ = BN.μ, BN.σ, BN.γ, BN.β, BN.λ
-
-  dims = trace(x -> length(size(x)), stagedinputs(x)...)
-  channels = trace((x,dims) -> size(x, dims - 1), stagedinputs(x)..., dims)
-
-  affine_shape = trace((dims, channels) -> begin
-    affine_shape = onesArr(Int, dims)
-    affine_shape[dims-1] = channels # not traced
-    affine_shape
-  end, dims, channels)
-
-  dims_ = trace((dims)-> dims - 2, dims)
-
-  out = trace((x) -> begin
-    k = Tuple(affine_shape)
-    μ = reshape(μ, affine_shape...)
-    σ = reshape(σ, affine_shape...)
-    γ = reshape(γ, affine_shape...)
-    β = reshape(β, affine_shape...)
-    λ.(γ .* ((x .- μ) ./ σ) .+ β)
-  end, stagedinputs(x)...)
-
-  f = vertex(DataFlow.Lambda(1,
-    vertex(DataFlow.Do(),
-      vcall(setindex!, unwrap(affine_shape), unwrap(channels), unwrap(dims_)),
-      unwrap(out))
-      ))
-
-  wrap(out, vcall(f, x))
-end
-
-@primitive Trace Base.length(s::StagedArray) = StagedArray(getindex, s, :(String("length")), v=length(val(s)))
-@primitive Trace Base.ones(t, i::StagedArray) = StagedArray(ones, t, i)
-@primitive Trace Tuple(t::StagedArray) = StagedArray(Flux.data, t, v=Tuple(val(t)))
-@primitive Trace Flux.data(t::StagedArray) = StagedArray(Flux.data, t)
-
-jscall(::typeof(Base.ones), t, i) = jscall(:(tf.ones), jscall(tuple, i), dtype(t))
-jscall(::typeof(Flux.data), t) = jscall(:(flux.data), t)
-
-dtype(::Type{Int}) = :(String("int32"))
-dtype(::Type{Float32}) = :(String("float32"))
-
-onesArr(t, i) = ones(t, i)
-@primitive Trace onesArr(t, i::StagedArray) = StagedArray(onesArr, t, i)
-jscall(::typeof(onesArr), t, i) = jscall(:([].fill.apply), jscall(:(Array), i), :([1]))
-
-@primitive Trace Base.setindex!(A, X, i) =
-  any(x -> x isa StagedArray , (A, X)) ?
-  StagedArray(setindex!, A, X, trace((i) -> i - 1, i), v = setindex!(val(A), val(X), val(i))) :
-  trace(setindex!, A, X, i)
-
+#
+# @primitive Trace function (BN::BatchNorm)(x)
+#   μ, σ, γ, β, λ = BN.μ, BN.σ, BN.γ, BN.β, BN.λ
+#
+#   dims = trace(x -> length(size(x)), stagedinputs(x)...)
+#   channels = trace((x,dims) -> size(x, dims - 1), stagedinputs(x)..., dims)
+#
+#   affine_shape = trace((dims, channels) -> begin
+#     affine_shape = onesArr(Int, dims)
+#     affine_shape[dims-1] = channels # not traced
+#     affine_shape
+#   end, dims, channels)
+#
+#   dims_ = trace((dims)-> dims - 2, dims)
+#
+#   out = trace((x) -> begin
+#     k = Tuple(affine_shape)
+#     μ = reshape(μ, affine_shape...)
+#     σ = reshape(σ, affine_shape...)
+#     γ = reshape(γ, affine_shape...)
+#     β = reshape(β, affine_shape...)
+#     λ.(γ .* ((x .- μ) ./ σ) .+ β)
+#   end, stagedinputs(x)...)
+#
+#   f = vertex(DataFlow.Lambda(1,
+#     vertex(DataFlow.Do(),
+#       vcall(setindex!, unwrap(affine_shape), unwrap(channels), unwrap(dims_)),
+#       unwrap(out))
+#       ))
+#
+#   wrap(out, vcall(f, x))
+# end
+#
+# @primitive Trace Base.length(s::StagedArray) = StagedArray(getindex, s, :(String("length")), v=length(val(s)))
+# @primitive Trace Base.ones(t, i::StagedArray) = StagedArray(ones, t, i)
+# @primitive Trace Tuple(t::StagedArray) = StagedArray(Flux.data, t, v=Tuple(val(t)))
+# @primitive Trace Flux.data(t::StagedArray) = StagedArray(Flux.data, t)
+#
+# jscall(::typeof(Base.ones), t, i) = jscall(:(tf.ones), jscall(tuple, i), dtype(t))
+# jscall(::typeof(Flux.data), t) = jscall(:(flux.data), t)
+#
+# dtype(::Type{Int}) = :(String("int32"))
+# dtype(::Type{Float32}) = :(String("float32"))
+#
+# onesArr(t, i) = ones(t, i)
+# @primitive Trace onesArr(t, i::StagedArray) = StagedArray(onesArr, t, i)
+# jscall(::typeof(onesArr), t, i) = jscall(:([].fill.apply), jscall(:(Array), i), :([1]))
+#
+# @primitive Trace Base.setindex!(A, X, i) =
+#   any(x -> x isa StagedArray , (A, X)) ?
+#   StagedArray(setindex!, A, X, trace((i) -> i - 1, i), v = setindex!(val(A), val(X), val(i))) :
+#   trace(setindex!, A, X, i)
+#
 @primitive Trace copy(A::StagedArray{AbstractArray,N}) where N =
   StagedArray(copy,A)
 
@@ -267,6 +289,6 @@ function invertedindex(x::AbstractArray, i)
   return index, _size
 end
 
-@primitive Trace Base.iterate(x::StagedArray{T,N}) where {T,N} = StagedArray(iterate, x)
-@primitive Trace Base.iterate(x::StagedArray{T,N}, state) where {T,N} = StagedArray(iterate, x, state)
-jscall(::typeof(iterate), args...) = jscall(:(flux.iterate), args...)
+# @primitive Trace Base.iterate(x::StagedArray{T,N}) where {T,N} = StagedArray(iterate, x)
+# @primitive Trace Base.iterate(x::StagedArray{T,N}, state) where {T,N} = StagedArray(iterate, x, state)
+# jscall(::typeof(iterate), args...) = jscall(:(flux.iterate), args...)
