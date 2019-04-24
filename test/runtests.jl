@@ -4,19 +4,29 @@ using JSExpr, JSON, WebIO
 using Blink
 using Test
 
+atomshell = Blink.AtomShell.isinstalled()
+
+if !atomshell
+    Blink.AtomShell.install()
+end
+
 include("./helpers.jl")
 
 @testset "FluxJS" begin
 
-# m = Dense(10,5)
-# v = traceλ(m, rand(10))
-# ex = prettify(DataFlow.syntax(v))
-#
-# @test @capture ex _ -> (+).(matVecMul(_,_),_)
+m = Dense(10,5)
+v = traceλ(m, rand(10))
+ex = prettify(DataFlow.syntax(v))
+
+@test @capture ex _ -> (+).(matVecMul(_,_),_)
 
 w = setupWindow()
 
 x = rand(Float32, 2)
+@testset "identity" begin
+    testjs(w, identity, x)
+end
+
 @testset "*" begin
     m = (x) -> ones(2, 2) * x
     testjs(w, m, x)
@@ -41,10 +51,10 @@ end
     testjs(w, m, x)
 end
 
-# @testset "Dense Layer" begin
-#     m = Dense(2, 2)
-#     testjs(w, m, x)
-# end
+@testset "Dense Layer" begin
+    m = Chain(Dense(2, 2))
+    testjs(w, m, x)
+end
 
 @testset "Chain" begin
     m = Chain(identity, identity)
@@ -103,33 +113,37 @@ end
     testjs(w, m, x)
 end
 
-# @testset "BatchNorm" begin
-#     m = Chain(BatchNorm(10))
-#     Flux.testmode!(m)
-#     x = rand(10, 1)
-#     testjs(w, m, x)
-# end
+@testset "BatchNorm" begin
+    m = Chain(BatchNorm(10))
+    Flux.testmode!(m)
+    x = rand(10, 1)
+    testjs(w, m, x)
+end
 
-# @testset "reshape" begin
-#     m = x -> reshape(x, :, size(x, 3))
-#     x = rand(1, 2, 3)
-#     testjs(w, m, x)
-# end
+@testset "reshape" begin
+    m = x -> reshape(x, :, size(x, 3))
+    x = rand(1, 2, 3)
+    testjs(w, m, x)
+end
 
-# @testset "RNN" begin
-#     m = Chain(RNN(10, 10))
-#     x = rand(10)
-#     testjs(w, m, x)
-# end
-#
-# @testset "LSTM" begin
-#     m = x -> Flux.gate(x, 4, 1)
-#     x = rand(10)
-#     testjs(w, m, x)
-#
-#     m = Chain(LSTM(10, 10))
-#     x = rand(10)
-#     testjs(w, m, x)
-# end
+@testset "RNN" begin
+    m = Chain(RNN(10, 10))
+    x = rand(10)
+    testjs(w, m, x)
+end
 
+@testset "LSTM" begin
+    m = x -> Flux.gate(x, 4, 1)
+    x = rand(10)
+    testjs(w, m, x)
+
+    m = Chain(LSTM(10, 10))
+    x = rand(10)
+    testjs(w, m, x)
+end
+
+end
+
+if !atomshell
+    Blink.AtomShell.uninstall()
 end

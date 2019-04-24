@@ -8,11 +8,8 @@ function modeljs(model, x, result::WebIO.Observable)
         JSExpr.@var weights = $weights.map(e -> begin
             tf.tensor(e)
         end)
-        console.log("eee")
         JSExpr.@var x = tf.tensor($x)
         model.setWeights(weights)
-        console.log(model, x)
-        console.log(model(x))
         window.model = model
         $result[] = model(x).dataSync()
     end)
@@ -81,7 +78,7 @@ function loadseq(w, config, args...)
 end
 
 function setupWindow()
-    w = Blink.Window(Dict(:show => true))
+    w = Blink.Window(Dict(:show => false))
     libs = [
         "https://unpkg.com/bson@2.0.8/browser_build/bson.js",
         "//cdnjs.cloudflare.com/ajax/libs/tensorflow/0.11.7/tf.js"]
