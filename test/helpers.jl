@@ -45,7 +45,7 @@ function testjs(w, model, x)
         put!(output, o)
     end
     Blink.body!(w, s)
-    res = [Flux.data(model(x))...]
+    res = [data(model(x))...]
     @test compare(res, take!(output, 5))
 end
 

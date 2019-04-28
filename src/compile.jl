@@ -33,7 +33,7 @@ end
 function liftweights(v, weights=[])
   v = DataFlow.prewalkλ(v) do x
     cvalue(x) isa AbstractArray || return x
-    push!(weights, Float32.(Tracker.data(cvalue(x))))
+    push!(weights, Float32.(data(cvalue(x))))
     DataFlow.constant(:(model.weights[$(length(weights)-1)]))
   end
   v, weights

@@ -3,6 +3,7 @@ using FluxJS: traceλ
 using JSExpr, JSON, WebIO
 using Blink
 using Test
+using Flux.Tracker: data
 
 atomshell = Blink.AtomShell.isinstalled()
 

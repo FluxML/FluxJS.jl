@@ -1,4 +1,4 @@
-using NNlib: padtuple, conv
+using NNlib: conv
 
 const to_NCHW = :([0, 3, 1, 2])
 const to_NHWC = :([0, 2, 3, 1])
@@ -54,12 +54,11 @@ end
 
 @primitive Trace function (c::Conv)(x)
   out = conv(val(x), c.weight, pad = c.pad, stride = c.stride, dilation = c.dilation)
-  pad = 0
-  !all(x-> x == c.pad[1], c.pad) ?
-    throw(error("Assymetric padding is unsupported by deeplearn-js")) :
-    pad = c.pad[1]
 
-  y = Staged(conv, stagedinputs(x)..., c.weight, padtuple(val(x),c.stride), pad, padtuple(val(x),c.dilation), v=out)
+  all(x-> x == c.pad[1], c.pad) ||
+    error("Assymetric padding is unsupported by tf.conv2d")
+
+  y = Staged(conv, stagedinputs(x)..., c.weight, c.stride, c.pad[1], c.dilation, v=out)
   σ, b = c.σ, reshape(c.bias, map(_->1, c.stride)..., :, 1)
   out = overdub(Trace(), (x) -> (σ).(x .+ b), y)
   wrap(out, vcall(vertex(DataFlow.Lambda(1, unwrap(out))), x))
@@ -147,18 +146,14 @@ jscall(::typeof(reshape), p, dims...) =
 
 # size
 @primitive Trace Base.size(x::StagedArray) =
-  Staged(getindex, x, :(String("shape")), v=size(val(x)))
+  Staged(getindex, x, :("shape"), v=size(val(x)))
 
 @primitive ctx::Trace Base.size(x, i) =
-  ! any(x -> x isa Staged, (x, i)) ?
+  !any(x -> x isa StagedType, (x, i)) ?
   trace(size, x, i) :
   begin
-    if x isa Staged
-      _size = tracecall((x) -> size(x), x, meta=ctx)
-    else
-      _size = size(x)
-    end
-    Staged(js_invindex, _size, i, v=size(val(x))[val(i)])
+    s, n = invertedindex(x, i)
+    wrap(s[i], unwrap(s[n]))
   end
 
 # # gate ( for LSTM and GRU )
@@ -210,6 +205,7 @@ jscall(::typeof(copy), A) = jscall(:(flux.slice), A)
 
 function invertedindex(x::AbstractArray, i)
   _size = trace((x) -> size(x), x)
-  index = trace((s, i)-> (length(s) - i), _size ,i)
-  return index, _size
+  l = length(val(_size))
+  index = trace((l, i)-> l - i + 1, l, i)
+  return _size, index
 end
