@@ -109,7 +109,7 @@ end
 end
 
 @testset "maxpool" begin
-    m = Chain(Conv((2, 2), 2=>2), x -> maxpool(x, (2, 2)))
+    m = Chain(Conv((2, 2), 2=>2), MaxPool((2, 2)))
     x = rand(Float32, 4,4,2,2)
     testjs(w, m, x)
 end

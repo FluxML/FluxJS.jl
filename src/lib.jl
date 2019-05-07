@@ -1,4 +1,5 @@
-using NNlib: conv
+using NNlib: conv, DenseConvDims, PoolDims
+using Flux: maxpool
 
 const to_NCHW = :([0, 3, 1, 2])
 const to_NHWC = :([0, 2, 3, 1])
@@ -53,7 +54,8 @@ end
 # conv2d
 
 @primitive Trace function (c::Conv)(x)
-  out = conv(val(x), c.weight, pad = c.pad, stride = c.stride, dilation = c.dilation)
+  cdims = DenseConvDims(val(x), c.weight; stride=c.stride, padding=c.pad, dilation=c.dilation) 
+  out = conv(val(x), c.weight, cdims)
 
   all(x-> x == c.pad[1], c.pad) ||
     error("Assymetric padding is unsupported by tf.conv2d")
@@ -79,14 +81,14 @@ end
 
 # maxpool
 
-@primitive Trace function maxpool(x::AbstractArray, k; pad = map(_->0,k), stride = k)
-  out = maxpool(val(x), k, pad=pad, stride=stride)
+@primitive Trace function (m::MaxPool)(x)
+  pdims = PoolDims(val(x), m.k; padding=m.pad, stride=m.stride)
+  out = maxpool(val(x), pdims)
 
-  !all(x-> x == pad[1], pad) ?
-    throw(error("Assymetric padding is unsupported by deeplearn-js")) :
-    pad = pad[1]
+  all(x-> x == m.pad[1], m.pad) ||
+    throw(error("Assymetric padding is unsupported by deeplearn-js"))
 
-  Staged(maxpool, x, k, pad, stride, v=out)
+  Staged(maxpool, x, m.k, m.pad[1], m.stride, v=out)
 end
 
 function jscall(::typeof(maxpool), x, k, pad, stride)
