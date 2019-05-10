@@ -82,12 +82,10 @@ uuid = "a8cc5b0e-0ffa-5ad4-8c14-923d3ee1735f"
 version = "4.0.0"
 
 [[DataFlow]]
-deps = ["Juno", "Lazy", "MacroTools", "Test"]
-git-tree-sha1 = "339c6db923fe8024397454cb0e97442c50eda035"
-repo-rev = "master"
-repo-url = "https://github.com/MikeInnes/DataFlow.jl.git"
+deps = ["Juno", "Lazy", "MacroTools"]
+git-tree-sha1 = "e95561c5bf352d58eacf348e30e85f2d87d37321"
 uuid = "a237f610-4214-5ca7-a9c6-385896804134"
-version = "0.4.0+"
+version = "0.5.0"
 
 [[DataStructures]]
 deps = ["InteractiveUtils", "OrderedCollections", "Random", "Serialization", "Test"]
@@ -207,10 +205,10 @@ uuid = "e89f7d12-3494-54d1-8411-f7d8b9ae1f27"
 version = "0.5.0"
 
 [[Missings]]
-deps = ["Dates", "InteractiveUtils", "SparseArrays", "Test"]
-git-tree-sha1 = "d1d2585677f2bd93a97cfeb8faa7a0de0f982042"
+deps = ["SparseArrays", "Test"]
+git-tree-sha1 = "f0719736664b4358aa9ec173077d4285775f8007"
 uuid = "e1d29d7a-bbdc-5cf2-9ac0-f12de2c33e28"
-version = "0.4.0"
+version = "0.4.1"
 
 [[Mmap]]
 uuid = "a63ad114-7e13-5084-954f-fe012c677804"
@@ -328,9 +326,9 @@ version = "0.5.3"
 
 [[Tracker]]
 deps = ["Adapt", "DiffRules", "ForwardDiff", "LinearAlgebra", "MacroTools", "NNlib", "NaNMath", "Printf", "Random", "Requires", "SpecialFunctions", "Statistics", "Test"]
-git-tree-sha1 = "0bec1b68c63a0e8a58d3944261cbf4cc9577c8a1"
+git-tree-sha1 = "635c47e3afc470c5cc58021fe489d663ef3182ed"
 uuid = "9f7883ad-71c0-57eb-9f7f-b5c9e6d3789c"
-version = "0.2.0"
+version = "0.2.1"
 
 [[TranscodingStreams]]
 deps = ["Random", "Test"]
