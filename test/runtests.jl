@@ -1,8 +1,15 @@
 using Flux, FluxJS, DataFlow, MacroTools
 using FluxJS: traceλ
-using Base.Test
 using JSExpr, JSON, WebIO
 using Blink
+using Test
+using Flux.Tracker: data
+
+atomshell = Blink.AtomShell.isinstalled()
+
+if !atomshell
+    Blink.AtomShell.install()
+end
 
 include("./helpers.jl")
 
@@ -10,13 +17,17 @@ include("./helpers.jl")
 
 m = Dense(10,5)
 v = traceλ(m, rand(10))
-ex = prettify(DataFlow.syntax(traceλ(m,rand(10))))
+ex = prettify(DataFlow.syntax(v))
 
 @test @capture ex _ -> (+).(matVecMul(_,_),_)
 
 w = setupWindow()
 
-x = rand(2)
+x = rand(Float32, 2)
+@testset "identity" begin
+    testjs(w, identity, x)
+end
+
 @testset "*" begin
     m = (x) -> ones(2, 2) * x
     testjs(w, m, x)
@@ -42,59 +53,64 @@ end
 end
 
 @testset "Dense Layer" begin
-    m = Dense(2, 2)
+    m = Chain(Dense(2, 2))
+    testjs(w, m, x)
+end
+
+@testset "Chain" begin
+    m = Chain(identity, identity)
     testjs(w, m, x)
 end
 
 @testset "broadcast" begin
     b = ones(2)
 
-    m = Chain(x -> x .+ b)
+    m = x -> x .+ b
     testjs(w, m, x)
 
-    m = Chain(x -> x .* b)
+    m = x -> x .* b
     testjs(w, m, x)
 
-    m = Chain(x -> x ./ b)
+    m = x -> x ./ b
     testjs(w, m, x)
 
-    m = Chain(x -> x .- b)
+    m = x -> x .- b
     testjs(w, m, x)
 
-    m = Chain(x -> exp.(x))
+    m = x -> exp.(x)
     testjs(w, m, x)
 
-    m = Chain(x -> log.(x))
+    m = x -> log.(x)
     testjs(w, m, x)
 
-    m = Chain(x -> x .^ [2])
+    m = x -> x .^ [2]
     testjs(w, m, x)
 
-    m = Chain(x -> σ.(x))
+    m = x -> σ.(x)
     testjs(w, m, x)
 
-    m = Chain(x -> tanh.(x))
+    m = x -> tanh.(x)
     testjs(w, m, x)
 
-    m = Chain(x -> relu.(x))
+    m = x -> relu.(x)
     testjs(w, m, x)
 
-    m = Chain(x -> leakyrelu.(x))
+    m = x -> leakyrelu.(x)
     testjs(w, m, x)
 
-    m = Chain(x -> copy.(x))
+    m = x -> copy.(x)
     testjs(w, m, x)
 end
 
 @testset "Conv" begin
     m = Chain(Conv((2, 2), 2=>2))
-    x = rand(2,2,2,2)
+    x = rand(Float32, 2,2,2,2)
     testjs(w, m, x)
 end
 
 @testset "maxpool" begin
-    m = Chain(Conv((2, 2), 2=>2), x -> maxpool(x, (2, 2)))
-    x = rand(4,4,2,2)
+    m = Chain(Conv((2, 2), 2=>2), MaxPool((2, 2)))
+    x = rand(Float32, 4,4,2,2)
     testjs(w, m, x)
 end
 
@@ -106,13 +122,19 @@ end
 end
 
 @testset "reshape" begin
-    m = Chain(x -> reshape(x, :, size(x, 3)))
+    m = x -> reshape(x, :, size(x, 3))
     x = rand(1, 2, 3)
     testjs(w, m, x)
 end
 
+@testset "RNN" begin
+    m = Chain(RNN(10, 10))
+    x = rand(10)
+    testjs(w, m, x)
+end
+
 @testset "LSTM" begin
-    m = Chain(x -> Flux.gate(x, 4, 1))
+    m = x -> Flux.gate(x, 4, 1)
     x = rand(10)
     testjs(w, m, x)
 
@@ -121,10 +143,8 @@ end
     testjs(w, m, x)
 end
 
-@testset "mean" begin
-    m = Chain(x -> mean(x, 1))
-    x = rand(10, 10)
-    testjs(w, m, x)
 end
 
+if !atomshell
+    Blink.AtomShell.uninstall()
 end

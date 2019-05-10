@@ -1,5 +1,3 @@
-using DataFlow
-
 struct Meth
   func
   args::Tuple
@@ -32,15 +30,16 @@ function lower(v)
   end
 end
 
-function liftweights(v)
-  weights = []
+function liftweights(v, weights=[])
   v = DataFlow.prewalkλ(v) do x
     cvalue(x) isa AbstractArray || return x
-    push!(weights, Float32.(Tracker.data(cvalue(x))))
+    push!(weights, Float32.(data(cvalue(x))))
     DataFlow.constant(:(model.weights[$(length(weights)-1)]))
   end
   v, weights
 end
+
+liftweights(c::Nothing, w=[]) = (c, w)
 
 # Julia Code Stuff
 
@@ -73,29 +72,41 @@ function insert_returns(ex)
 end
 
 function prepare(ex, name, states = nothing)
+  decl_state = states == nothing ? :(;) :
+    :(init = []; states = [])
   state_setup = states == nothing ? :(;) :
-    :(init = $states; states = init.slice())
+    :(global init = $states; global states = init.slice())
   reset_method = states == nothing ? :(;) :
     :(model.reset = () -> (global states = init.slice(); return);)
-  get_states = states == nothing? :(;) : :(model.getStates = () -> (return states);)
+  get_states = states == nothing ? :(;) : :(model.getStates = () -> (return states);)
+  set_weights = quote
+    model.setWeights = (ws) -> begin
+      model.weights = ws;
+      $(state_setup.args...)
+      return;
+    end
+  end
   quote
     model = (() -> begin
       math = tf;
-      $(state_setup.args...)
+      model.weights = []
+      $(decl_state.args...)
       model = $(ex)
       $(reset_method.args...)
       $(get_states.args...)
-      model.weights = []
+      $(set_weights.args...)
       model
     end)()
-    flux.fetchWeights($"$name.bson").then(ws -> model.weights = ws)
+    flux.fetchWeights($"$name.bson").then(model.setWeights)
   end |> insert_returns |> inline_blocks |> alias_gensyms |> flatten |> striplines
 end
 
 function compile(v::IVertex, name, states = [])
   statesv = states == [] ? nothing :
-    unwrap((states...,)) |> lower |> DataFlow.syntax
+    unwrap((states...,)) |> lower
   v, weights = liftweights(lower(v))
+  statesv, weights = liftweights(statesv, weights)
+  statesv == nothing || (statesv = DataFlow.syntax(statesv))
   jsexpr(prepare(DataFlow.syntax(v), name, statesv)), weights
 end
 

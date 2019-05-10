@@ -1,6 +1,6 @@
-using Vinyl: @primitive, overdub, isprimitive, primitive
+using Vinyl: @primitive, overdub, primitive, @hook
 using DataFlow
-import ASTInterpreter2._Typeof
+using JuliaInterpreter
 
 struct Trace
   states::Vector{Any}
@@ -8,46 +8,53 @@ end
 
 Trace() = Trace([])
 
-struct StagedArray{T,N} <: AbstractArray{T,N}
+struct Staged{T}
   graph::IVertex{Any}
-  val
+  val::T
 end
 
-Base.size(x::StagedArray) = size(val(x))
+struct StagedArray{T,N,R<:AbstractArray{T,N}} <: AbstractArray{T,N}
+  s::Staged{R}
+end
 
-Base.show(io::IO, ::MIME"text/plain", s::StagedArray) =
-  print(io, "StagedArray{$(eltype(s)),$(ndims(s))}($(s.val), $(s.graph))")
+struct StagedReal{N <: Real} <: Real
+  s::Staged{N}
+end
 
-Base.show(io::IO, s::StagedArray) =
-  print(io, "StagedArray{$(eltype(s)),$(ndims(s))}")
+const StagedType = Union{StagedArray,StagedReal}
+
+Base.show(io::IO, s::Union{StagedType,Staged}) =
+  print(io, "$(typeof(s))")
+
+Base.show(io::IO, ::MIME"text/plain", s::Union{StagedType,Staged}) =
+  print(io, "$(typeof(s))($(unwrap(s)), $(val(s)))")
 
 val(x) = x
-val(x::StagedArray) = val(x.val)
+val(x::Staged) = val(x.val)
+val(x::StagedType) = val(x.s)
 val(x::Tuple) = val.(x)
 
-dims(x) = ndims(x)
-dims(x::Tuple) = length(x)
-dims(x::StagedArray) = dims(val(x))
-
-_Typeof(x) = isa(x,Type) ? Type{x} : typeof(val(x))
-
-graph(x::StagedArray) = x.graph
+graph(x::Staged) = x.graph
+graph(x::StagedType) = graph(x.s)
 graph(x) = DataFlow.constant(x)
 vcall(args...) = DataFlow.vertex(DataFlow.Call(), graph.(args)...)
 
-StagedArray(f, args...; v=val(f(val.(args)...))) =
-  StagedArray{typeof(v),dims(v)}(vcall(f, args...),v)
+eval_(f, args) = val(f(val.(args)...))
 
-stage(x::AbstractArray{T,N}, v) where {T,N} = StagedArray{T,N}(v, val(x))
-stage(x::Tuple, v) = StagedArray{Tuple{eltype(x)},dims(x)}(v, val(x))
-stage(x::Real, v) = StagedArray{typeof(x),dims(x)}(v, val(x))
+Staged(f, args...; v=eval_(f, args)) = stage(v, vcall(f, args...))
+
+stage(x::AbstractArray{T,N}, v) where {T,N} = StagedArray(Staged(v, val(x)))
+stage(x::StagedType, v) = stage(val(x), v)
+stage(x::Tuple, v) = ntuple(n -> stage(x[n], vcall(getindex, v, n - 1)), length(x))
+stage(x::Real, v) = StagedReal(Staged(v, val(x)))
 stage(x, v) = error("Unsupported type $(typeof(x))")
 
 trace(f, args...; meta = Trace()) = overdub(meta, f, args...)
 
-unwrap(x::StagedArray) = x.graph
+unwrap(x::Staged) = x.graph
 unwrap(xs::Tuple) = vcall(tuple, unwrap.(xs)...)
 unwrap(x::Union{Number,AbstractArray{<:Number}}) = DataFlow.constant(x)
+unwrap(x::StagedType) = unwrap(x.s)
 
 stagedinputs(xs...) = [stage(x, DataFlow.inputnode(n)) for (n, x) in enumerate(xs)]
 
@@ -59,8 +66,7 @@ end
 
 traceλ(f, args...; meta = Trace()) = _traceλ(f, args..., meta = meta)[2]
 
-wrap(x::StagedArray, v) = stage(x, v)
-wrap(x::Tuple, v) = ntuple(n -> wrap(x[n], vertex(DataFlow.Split(n), v)), length(x))
+wrap(args...) = stage(args...)
 
 function tracecall(f, args...; meta = Trace())
   out, v = _traceλ(f, args..., meta = meta)
@@ -68,9 +74,12 @@ function tracecall(f, args...; meta = Trace())
   wrap(out, v)
 end
 
+iscompiled(f) = parentmodule(typeof(f)) == JuliaInterpreter.CompiledCalls
+
 @primitive ctx::Trace function (f::Any)(args...)
+  iscompiled(f) && return Base.invokelatest(f, args...)
   inline = !(all(x -> x isa Union{AbstractArray,Number}, args) &&
-             any(x -> x isa StagedArray, args))
+             any(x -> x isa StagedType, args))
   inline ?
     trace(f, args..., meta = ctx) :
     tracecall(f, args..., meta = ctx)
@@ -78,18 +87,12 @@ end
 
 control(a::IVertex, b::IVertex = DataFlow.inputnode()) = vcall(control, a, b)
 
-tensor(x::TrackedArray) = StagedArray(tensor, Flux.data(x), reverse(size(x)),v=Flux.data(x))
-tensor(x::Tuple) = tensor.(x)
-jscall(::typeof(tensor), x...) = jscall(:(math.tensor), x...)
-
 @primitive ctx::Trace function (f::Flux.Recur)(args...)
-  push!(ctx.states, tensor(f.init))
+  push!(ctx.states, f.init)
   i = length(ctx.states)-1
   states = control(DataFlow.constant(:states))
   state = stage(f.init, vcall(getindex, states, i))
-  out = trace(f.cell, state, stagedinputs(args...)...)
-  h = trace((o) -> o[1], out)
-  y = trace((o) -> o[2], out)
+  h, y = trace(f.cell, state, stagedinputs(args...)...)
   λ = vertex(DataFlow.Lambda(length(args),
                              vertex(DataFlow.Do(),
                                     vcall(setindex!, states, unwrap(h), i),
@@ -98,12 +101,22 @@ jscall(::typeof(tensor), x...) = jscall(:(math.tensor), x...)
 end
 
 struct BTrace end
+@primitive Trace function (::typeof(Base.Broadcast.broadcasted))(f, args...)
+  overdub(BTrace(), () -> f(args...))
+end
+
+# don't record type conversions
+@primitive Trace function (::typeof(Base.Broadcast.broadcasted))(f::Type{T}, x::StagedType) where {T<:Number}
+  stage(f.(val(x)), unwrap(x))
+end
+
+@primitive Trace (::typeof(Base.Broadcast.materialize))(bc) = bc
 @primitive Trace (::typeof(broadcast))(f, args...) = overdub(BTrace(), () -> f(args...))
 
 bcast_ndims(args...) = maximum(arg isa AbstractArray ? ndims(arg) : 0 for arg in args)
 
 function bcastable(op)
-  @eval @primitive BTrace (::typeof($op))(args...) = StagedArray(broadcast, $op, args...)
+  @eval @primitive BTrace (::typeof($op))(args...) = Staged(broadcast, $op, args...)
 end
 
 bcastable(op, ops...) = (bcastable(op); bcastable(ops...))
